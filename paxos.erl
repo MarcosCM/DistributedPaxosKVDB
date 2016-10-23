@@ -151,6 +151,8 @@ get_paxos_data(NodoPaxos) ->
 	{paxos, NodoPaxos} ! {self(), get_paxos_data},
 	get_paxos_data(NodoPaxos, PaxosDataType, []).
 
+%% Iniciar proponente
+%% N = integer()
 proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
 	register(list_to_atom("proponente" ++ integer_to_list(NuInstancia)), self()),
 	% Lista de nodos
@@ -198,7 +200,8 @@ proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
 			end
 	end.
 
-% No tengo los prepara_ok necesarios
+%% Mientras no tenga los prepara_ok necesarios
+%% N = {integer(), pid()}
 proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes, N, V, HighestN, HighestV) when NeededVotes > 0 ->
 	receive
 		{_Pid, NuInstancia, prepara_ok, N, N_a, V_a} ->
@@ -222,7 +225,8 @@ proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes, N, V, HighestN, Hig
 			err
 	end;
 
-% Ya tengo los prepara_ok necesarios
+%% Cuando ya tengo los prepara_ok necesarios
+%% N = {integer(), pid()}
 proponente_wait_prepara(_NodoPaxos, NuInstancia, _NeededVotes, N, V, HighestN, HighestV) ->
 	Comparison = compare_n(N, HighestN),
 	if
@@ -238,7 +242,8 @@ proponente_wait_prepara(_NodoPaxos, NuInstancia, _NeededVotes, N, V, HighestN, H
 	io:format("Proponente pasa fase de preparacion instancia ~p~n", [NuInstancia]),
 	{true, ChosenN, ChosenV}.
 
-% No tengo los acepta_ok necesarios
+%% Mientras no tenga los acepta_ok necesarios
+%% N = {integer(), pid()}
 proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) when NeededVotes > 0 ->
 	receive
 		% Recibo un acepta_ok
@@ -253,21 +258,23 @@ proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) when NeededVot
 			err
 	end;
 
-% Ya tengo los acepta_ok necesarios
+%% Cuando ya tengo los acepta_ok necesarios
+%% N = {integer(), pid()}
 proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) ->
 	io:format("Proponente ~p ya tiene los acepta_ok necesarios~n", [NodoPaxos]),
 	{paxos, NodoPaxos} ! {self(), instancia_decidida, NuInstancia, {true, V}}.
 
-% Inicializar aceptador
+%% Iniciar aceptador
 aceptador_start(NodoPaxos, NuInstancia) ->
 	register(list_to_atom("aceptador" ++ integer_to_list(NuInstancia)), self()),
 	aceptador_wait_msg(NodoPaxos, NuInstancia, {-1, self()}, {-1, self()}, null).
 
+%% Gestion del mensaje prepara en el aceptador
+%% N = {integer(), pid()}
 aceptador_msg_prepara(NodoPaxos, NuInstancia, Pid, N_recibido, N_p, N_a, V_a) ->
 	io:format("Nodo ~p recibe prepara de instancia ~p~n", [NodoPaxos, NuInstancia]),
 	% Comprobamos que el valor de la instancia no se encuentre decidido
 	PaxosData = get_paxos_data(NodoPaxos),
-	io:format("get_paxos_data: ~p~n", [PaxosData]),
 	Instancias = datos_paxos:get_instancias(PaxosData),
 	Instancia = dict:find(NuInstancia, Instancias),
 	case Instancia of
@@ -296,6 +303,8 @@ aceptador_msg_prepara(NodoPaxos, NuInstancia, Pid, N_recibido, N_p, N_a, V_a) ->
 			end
 	end.
 
+%% Gestion del mensaje acepta en el aceptador
+%% N = {integer(), pid()}
 aceptador_msg_acepta(NodoPaxos, NuInstancia, Pid, N_recibido, V_recibido, N_p, N_a, V_a) ->
 	io:format("Nodo ~p recibe acepta de instancia ~p~n", [NodoPaxos, NuInstancia]),
 	% Comparamos N con N_p
@@ -313,9 +322,8 @@ aceptador_msg_acepta(NodoPaxos, NuInstancia, Pid, N_recibido, V_recibido, N_p, N
 			aceptador_wait_msg(NodoPaxos, NuInstancia, N_p, N_a, V_a)
 	end.
 
-% Aceptador escuchando
-% N_p = {integer(), pid()}
-% N_a = {integer(), pid()}
+%% Aceptador escuchando
+%% N = {integer(), pid()}
 aceptador_wait_msg(NodoPaxos, NuInstancia, N_p, N_a, V_a) ->
 	receive
 		% Recibo un prepara
@@ -375,6 +383,7 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 		{Pid, get_paxos_data} ->
 			Pid ! PaxosData,
 			bucle_recepcion(Servidores, Yo, PaxosData);
+		% Actualizar una instancia
 		{Pid, set_instancia, NuInstancia, Valor} ->
 			NewPaxosData = datos_paxos:set_instancia(PaxosData, NuInstancia, Valor),
 			bucle_recepcion(Servidores, Yo, NewPaxosData);
@@ -402,6 +411,9 @@ simula_fallo_mensj_prop_y_acep(Mensaje, Servidores, Yo, PaxosData) ->
 		true -> gestion_mnsj_prop_y_acep(Mensaje, Servidores, Yo, PaxosData)
 	end.
 
+%% Comprueba si existe aceptador para la instancia
+%% Si no existe lo crea
+%% Devuelve el Pid del aceptador para la instancia
 check_aceptador_alive(NodoPaxos, NuInstancia) ->
 	Name = list_to_atom("aceptador" ++ integer_to_list(NuInstancia)),
 	AceptadorPid = whereis(Name),
