@@ -13,16 +13,18 @@
 
 		% atom
 -record(paxos, {fiabilidad = fiable,
-		% pos_integer
+		% pos_integer()
             num_mensajes = 0,
-		% [Pid]
+		% [pid()]
             servidores = [],
-		% Pid
+		% pid()
             yo,
 		% dict NuRegistro -> Valor :: any()
             registros = dict:new(),
 		% dict NuInstancia -> {Decidido :: boolean(), Valor :: any()}
-			instancias = dict:new()
+			instancias = dict:new(),
+		% pos_integer()
+			hecho_hasta = 0
 		}).
 
 %%%%%%%%%%% FUNCIONES DE ACCESO Y MANIPULACION DE LA ESTRUCTURA DE DATOS
@@ -56,5 +58,31 @@ get_registros(PaxosData) ->
 get_instancias(PaxosData) ->
 	PaxosData#paxos.instancias.
 
+get_instancia(PaxosData, NuInstancia) ->
+	Instancias = datos_paxos:get_instancias(PaxosData),
+	Instancia = dict:find(NuInstancia, Instancias),
+	if
+		% Si la instancia no esta almacenada
+		Instancia == error ->
+			io:format("Instancia ~p~n", [{false, null}]),
+			{false, null};
+		% Si esta almacenada devolvemos su valor
+		true ->
+			{ok, ValorInstancia} = Instancia,
+			io:format("Instancia ~p~n", [ValorInstancia]),
+			ValorInstancia
+	end.
+
 set_instancia(PaxosData, NuInstancia, Valor) ->
 	PaxosData#paxos{instancias = dict:store(NuInstancia, Valor, PaxosData#paxos.instancias)}.
+
+get_hecho_hasta(PaxosData) ->
+	PaxosData#paxos.hecho_hasta.
+
+set_hecho_hasta(PaxosData, NuInstancia) ->
+	if
+		NuInstancia < PaxosData#paxos.hecho_hasta ->
+			PaxosData;
+		true ->
+			PaxosData#paxos{hecho_hasta = NuInstancia}
+	end.

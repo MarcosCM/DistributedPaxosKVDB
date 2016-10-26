@@ -476,6 +476,7 @@ basicos() ->
   instancias_fuera_orden(),
   helper:killall(),
   proponentes_sordos().
+  helper:killall().
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 

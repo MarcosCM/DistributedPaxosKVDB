@@ -118,43 +118,51 @@ resend_msg_buff([H|T]) ->
 	self() ! H,
 	resend_msg_buff(T).
 
-%% Obtener la estructura de datos paxos de forma segura con un tiempo de timeout
-get_paxos_data(NodoPaxos, PaxosDataType, MsgBuff, TimeOut) ->
+%% Obtener mensaje de un tipo concreto con un tiempo de timeout
+get_msg_aux(MsgType, MsgBuff, TimeOut) ->
 	receive
-		PaxosData when paxos == element(1, PaxosData) ->
+		{MsgType, Data} ->
 			resend_msg_buff(MsgBuff),
-			PaxosData;
+			Data;
 		Msg ->
-			get_paxos_data(NodoPaxos, PaxosDataType, MsgBuff ++ [Msg])
+			get_msg_aux(MsgType, MsgBuff ++ [Msg])
 	after TimeOut ->
 		timeout
 	end.
 
-get_paxos_data(NodoPaxos, TimeOut) ->
-	PaxosDataType = datos_paxos:new_paxos_data([], self()),
-	{paxos, NodoPaxos} ! {self(), get_paxos_data},
-	get_paxos_data(NodoPaxos, PaxosDataType, [], TimeOut).
+%% Obtener mensaje de un tipo concreto con tiempo de timeout
+get_msg(MsgType, TimeOut) ->
+	get_msg_aux(MsgType, [], TimeOut).
 
-%% Obtener la estructura de datos paxos de forma segura sin tiempo de timeout
-get_paxos_data(NodoPaxos, PaxosDataType, MsgBuff) ->
+%% Obtener mensaje de un tipo concreto sin tiempo de timeout
+get_msg_aux(MsgType, MsgBuff) ->
 	receive
-		PaxosData when paxos == element(1, PaxosData) ->
+		{MsgType, Data} ->
 			resend_msg_buff(MsgBuff),
-			PaxosData;
+			Data;
 		Msg ->
-			get_paxos_data(NodoPaxos, PaxosDataType, MsgBuff ++ [Msg])
+			get_msg_aux(MsgType, MsgBuff ++ [Msg])
 	end.
 
-%% Obtener lista de servidores
-get_paxos_data(NodoPaxos) ->
-	PaxosDataType = datos_paxos:new_paxos_data([], self()),
+%% Obtener mensaje de un tipo concreto sin tiempo de timeout
+get_msg(MsgType) ->
+	get_msg_aux(MsgType, []).
+
+% Obtener estructura de datos Paxos con tiempo de timeout
+get_paxos_data(NodoPaxos, TimeOut) ->
 	{paxos, NodoPaxos} ! {self(), get_paxos_data},
-	get_paxos_data(NodoPaxos, PaxosDataType, []).
+	get_msg(paxos_data, TimeOut).
+
+% Obtener estructura de datos Paxos sin tiempo de timeout
+get_paxos_data(NodoPaxos) ->
+	{paxos, NodoPaxos} ! {self(), get_paxos_data},
+	get_msg(paxos_data).
 
 %% Iniciar proponente
 %% N = integer()
 proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
 	register(list_to_atom("proponente" ++ integer_to_list(NuInstancia)), self()),
+	io:format("Proponente ~p start Instancia ~p N ~p Valor ~p~n", [NodoPaxos, NuInstancia, N, Valor]),
 	% Lista de nodos
 	PaxosData = get_paxos_data(NodoPaxos),
 	Servidores = datos_paxos:get_servidores(PaxosData),
@@ -165,7 +173,7 @@ proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
 	end, Servidores),
 	% Espera a prepara_ok(n, n_a, v_a)
 	NeededVotes = trunc((length(Servidores) / 2) + 1),
-	{IsMajority, ChosenN, ChosenV} = proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes,
+	{IsMajority, _ChosenN, ChosenV} = proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes,
 							{N, self()}, Valor,
 							{N, self()}, Valor),
 	if
@@ -260,7 +268,7 @@ proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) when NeededVot
 
 %% Cuando ya tengo los acepta_ok necesarios
 %% N = {integer(), pid()}
-proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) ->
+proponente_wait_acepta(NodoPaxos, NuInstancia, _NeededVotes, _N, V) ->
 	io:format("Proponente ~p ya tiene los acepta_ok necesarios~n", [NodoPaxos]),
 	{paxos, NodoPaxos} ! {self(), instancia_decidida, NuInstancia, {true, V}}.
 
@@ -371,7 +379,7 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 		ponte_sordo -> espero_escucha(Servidores, Yo, PaxosData);
 		
 		%%Cuando proceso proponente acaba
-		{'EXIT', _Pid, DatoDevuelto} -> 
+		{'EXIT', _Pid, _DatoDevuelto} -> 
 			%%%%%%%%%
 			% TO DO %
 			%%%%%%%%%
@@ -381,19 +389,39 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 
 		% Obtener estructura de datos
 		{Pid, get_paxos_data} ->
-			Pid ! PaxosData,
+			Pid ! {paxos_data, PaxosData},
 			bucle_recepcion(Servidores, Yo, PaxosData);
+
 		% Actualizar una instancia
-		{Pid, set_instancia, NuInstancia, Valor} ->
+		{_Pid, set_instancia, NuInstancia, Valor} ->
 			NewPaxosData = datos_paxos:set_instancia(PaxosData, NuInstancia, Valor),
 			bucle_recepcion(Servidores, Yo, NewPaxosData);
+
 		% Consenso en un valor del registro: actualizar y propagar al resto de nodos
-		{Pid, instancia_decidida, NuInstancia, Valor} ->
+		{_Pid, instancia_decidida, NuInstancia, Valor} ->
 			NewPaxosData = datos_paxos:set_instancia(PaxosData, NuInstancia, Valor),
 			lists:foreach(fun(Sv) ->
 				{paxos, Sv} ! {self(), NuInstancia, decidido, Valor}
 			end, Servidores),
 			bucle_recepcion(Servidores, Yo, NewPaxosData);
+
+		% Actualiza el valor de hecho_hasta
+		{_Pid, set_hecho_hasta, NuInstancia} ->
+			NewPaxosData = datos_paxos:set_hecho_hasta(PaxosData, NuInstancia),
+			bucle_recepcion(Servidores, Yo, NewPaxosData);
+
+		% Obtener hecho_hasta
+		{Pid, get_hecho_hasta} ->
+			NuInstancia = datos_paxos:get_hecho_hasta(PaxosData),
+			Pid ! {hecho_hasta, NuInstancia},
+			bucle_recepcion(Servidores, Yo, PaxosData);
+
+		% Obtener min
+		{Pid, get_min} ->
+			Min = min_aux(Servidores, 0) + 1,
+			Pid ! {min, Min},
+			bucle_recepcion(Servidores, Yo, PaxosData);
+
 		% Mensajes para proponente y aceptador del servidor local
 		Mensajes_prop_y_acept ->
 			simula_fallo_mensj_prop_y_acep(Mensajes_prop_y_acept, Servidores, Yo, PaxosData),
@@ -427,7 +455,7 @@ check_aceptador_alive(NodoPaxos, NuInstancia) ->
 %%-----------------------------------------------------------------------------
 % implementar tratamiento de mensajes recibidos en Paxos
 % Tanto por proponentes como aceptadores
-gestion_mnsj_prop_y_acep(Mensaje, Servidores, Yo, PaxosData) ->
+gestion_mnsj_prop_y_acep(Mensaje, _Servidores, Yo, _PaxosData) ->
 	%%%%% VUESTRO CODIGO AQUI
 
 	case Mensaje of
@@ -509,23 +537,9 @@ estado(NodoPaxos, NuInstancia) ->
 					io:format("Instancia ~p~n", [{false, null}]),
 					{false, null};
 				true ->
-					Instancias = datos_paxos:get_instancias(PaxosData),
-					Instancia = dict:find(NuInstancia, Instancias),
-					if
-						% Si la instancia no esta almacenada
-						Instancia == error ->
-							io:format("Instancia ~p~n", [{false, null}]),
-							{false, null};
-						% Si esta almacenada devolvemos su valor
-						true ->
-							{ok, ValorInstancia} = Instancia,
-							io:format("Instancia ~p~n", [ValorInstancia]),
-							ValorInstancia
-					end
+					datos_paxos:get_instancia(PaxosData, NuInstancia)
 			end
 	end.
-	%%%%% VUESTRO CODIGO AQUI
-
 
 %%-----------------------------------------------------------------------------
 %% La aplicación en el servidor NodoPaxos ya ha terminado
@@ -534,12 +548,7 @@ estado(NodoPaxos, NuInstancia) ->
 %% Devuelve :  ok.
 -spec hecho( node(), non_neg_integer() ) -> ok.
 hecho(NodoPaxos, NuInstancia) ->
-	%%%%%%%%%
-	% TO DO %
-	%%%%%%%%%
-	err.
-	%%%%% VUESTRO CODIGO AQUI
-
+	{paxos, NodoPaxos} ! {self(), set_hecho_hasta, NuInstancia}.
 
 %%-----------------------------------------------------------------------------
 %% Aplicación quiere saber el máximo número de instancia que ha visto
@@ -551,7 +560,22 @@ max(NodoPaxos) ->
 	% TO DO %
 	%%%%%%%%%
 	err.
-	%%%%% VUESTRO CODIGO AQUI
+
+%% Devuelve el minimo hecho_hasta recibido de todos los nodos
+min_aux([], Min_n) ->
+	Min_n;
+
+min_aux([H|T], Min_n) ->
+	{paxos, H} ! {self(), get_min},
+	SvMin = get_msg(min),
+	if
+		Min_n == none ->
+			min_aux(T, SvMin);
+		SvMin < Min_n ->
+			min_aux(T, SvMin);
+		true ->
+			min_aux(T, Min_n)
+	end.
 
 %%-----------------------------------------------------------------------------
 % Minima instancia vigente de entre todos los nodos Paxos
@@ -559,12 +583,10 @@ max(NodoPaxos) ->
 %Devuelve : NuInstancia = hecho + 1
 -spec min( node() ) -> non_neg_integer().
 min(NodoPaxos) ->
-	%%%%%%%%%
-	% TO DO %
-	%%%%%%%%%
+	io:format("Entra min ~p~n", [NodoPaxos]),
+	%{paxos, NodoPaxos} ! {self(), get_min},
+	%get_msg(min).
 	1.
-	%%%%% VUESTRO CODIGO AQUI
-
 
 %%-----------------------------------------------------------------------------
 % Cambiar comportamiento de comunicación del Nodo Erlang a NO FIABLE
