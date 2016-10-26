@@ -43,6 +43,9 @@ remove_registro(PaxosData, NuRegistro) ->
 get_fiabilidad(PaxosData) ->
 	PaxosData#paxos.fiabilidad.
 
+set_fiabilidad(PaxosData, Fiabilidad) ->
+	PaxosData#paxos{fiabilidad = Fiabilidad}.
+
 get_num_mensajes(PaxosData) ->
 	PaxosData#paxos.num_mensajes.
 

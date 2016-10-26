@@ -357,15 +357,15 @@ aceptador_wait_msg(NodoPaxos, NuInstancia, N_p, N_a, V_a) ->
 bucle_recepcion(Servidores, Yo, PaxosData) ->
 	receive
 		no_fiable ->
-			poner_no_fiable(),
-			bucle_recepcion(Servidores, Yo, PaxosData);
+			NewPaxosData = poner_no_fiable(PaxosData),
+			bucle_recepcion(Servidores, Yo, NewPaxosData);
 
 		fiable ->
-			poner_fiable(),
-			bucle_recepcion(Servidores, Yo, PaxosData);
+			NewPaxosData = poner_fiable(PaxosData),
+			bucle_recepcion(Servidores, Yo, NewPaxosData);
 
 		{es_fiable, Pid} -> 
-			Pid ! es_fiable(),
+			Pid ! es_fiable(PaxosData),
 			bucle_recepcion(Servidores, Yo, PaxosData);
 
 		{limitar_acceso, Nodos} ->
@@ -431,7 +431,7 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 	
 %%-----------------------------------------------------------------------------
 simula_fallo_mensj_prop_y_acep(Mensaje, Servidores, Yo, PaxosData) ->
-	Es_fiable = es_fiable(),
+	Es_fiable = es_fiable(PaxosData),
 	Aleatorio = rand:uniform(1000),
 	  %si no fiable, eliminar mensaje con cierta aleatoriedad
 	if  ((not Es_fiable) and (Aleatorio < 200)) -> 
@@ -501,23 +501,17 @@ espero_escucha(Servidores, Yo, PaxosData) ->
 		_Resto -> espero_escucha(Servidores, Yo, PaxosData)
 	end.
 
-poner_no_fiable() ->
-	%%%%%%%%%
-	% TO DO %
-	%%%%%%%%%
-	err.
+%% Obtiene la estructura de paxos nueva con fiabilidad = no_fiable
+poner_no_fiable(PaxosData) ->
+	datos_paxos:set_fiabilidad(PaxosData, no_fiable).
 
-poner_fiable() ->
-	%%%%%%%%%
-	% TO DO %
-	%%%%%%%%%
-	err.
+%% Obtiene la estructura de paxos nueva con fiabilidad = fiable
+poner_fiable(PaxosData) ->
+	datos_paxos:set_fiabilidad(PaxosData, fiable).
 
-es_fiable() ->
-	%%%%%%%%%
-	% TO DO %
-	%%%%%%%%%
-	err.
+%% Obtiene el atributo fiabilidad de la estructura de datos paxos
+es_fiable(PaxosData) ->
+	datos_paxos:get_fiabilidad(PaxosData).
 
 %%-----------------------------------------------------------------------------
 %% La aplicación quiere saber si este servidor opina que
@@ -557,8 +551,15 @@ hecho(NodoPaxos, NuInstancia) ->
 % Devuelve : NuInstancia
 -spec max( node() ) -> non_neg_integer().
 max(NodoPaxos) ->
-	%PaxosData = get_paxos_data(NodoPaxos),
-	err.
+	PaxosData = get_paxos_data(NodoPaxos),
+	Instancias = datos_paxos:get_instancias(PaxosData),
+	InstanciasKeys = dict:fetch_keys(Instancias),
+	if
+		[] == InstanciasKeys ->
+			0;
+		true ->
+			lists:max(InstanciasKeys)
+	end.
 
 %% Devuelve el minimo hecho_hasta recibido de todos los nodos
 get_min_aux([], Min_n) ->
@@ -590,7 +591,7 @@ min(NodoPaxos) ->
 			timeout;
 		true ->
 			Servidores = datos_paxos:get_servidores(PaxosData),
-			get_min_aux(Servidores, none)
+			get_min_aux(Servidores, none) + 1
 	end.
 
 %%-----------------------------------------------------------------------------

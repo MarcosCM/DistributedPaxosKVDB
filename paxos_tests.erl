@@ -475,7 +475,7 @@ basicos() ->
 	helper:killall(),
 	instancias_fuera_orden(),
 	helper:killall(),
-	proponentes_sordos().
+	proponentes_sordos(),
 	helper:killall().
 
 avanzados() ->
