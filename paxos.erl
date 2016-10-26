@@ -85,6 +85,8 @@ start_instancia(NodoPaxos, NuInstancia, Valor) ->
 	%%%%% VUESTRO CODIGO AQUI
 	MinInstancia = min(NodoPaxos),
 	if
+		MinInstancia == timeout ->
+			timeout;
 		NuInstancia < MinInstancia ->
 			ya_existe_proponente;
 		true ->
@@ -526,6 +528,8 @@ es_fiable() ->
 estado(NodoPaxos, NuInstancia) ->
 	MinInstancia = min(NodoPaxos),
 	if
+		MinInstancia == timeout ->
+			{false, null};
 		NuInstancia < MinInstancia ->
 			{false, null};
 		true ->
@@ -553,9 +557,7 @@ hecho(NodoPaxos, NuInstancia) ->
 % Devuelve : NuInstancia
 -spec max( node() ) -> non_neg_integer().
 max(NodoPaxos) ->
-	%%%%%%%%%
-	% TO DO %
-	%%%%%%%%%
+	%PaxosData = get_paxos_data(NodoPaxos),
 	err.
 
 %% Devuelve el minimo hecho_hasta recibido de todos los nodos
@@ -582,9 +584,14 @@ get_min_aux([H|T], Min_n) ->
 %Devuelve : NuInstancia = hecho + 1
 -spec min( node() ) -> non_neg_integer().
 min(NodoPaxos) ->
-	PaxosData = get_paxos_data(NodoPaxos),
-	Servidores = datos_paxos:get_servidores(PaxosData),
-	get_min_aux(Servidores, none).
+	PaxosData = get_paxos_data(NodoPaxos, ?TIMEOUT),
+	if
+		PaxosData == timeout ->
+			timeout;
+		true ->
+			Servidores = datos_paxos:get_servidores(PaxosData),
+			get_min_aux(Servidores, none)
+	end.
 
 %%-----------------------------------------------------------------------------
 % Cambiar comportamiento de comunicación del Nodo Erlang a NO FIABLE
