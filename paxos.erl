@@ -22,7 +22,7 @@
 -export([aceptador_start/2, aceptador_wait_msg/5]).
 -export([compare_n/2]).
 
--define(TIMEOUT, 3).
+-define(TIMEOUT, 300).
 
 
 -define(PRINT(Texto,Datos), io:format(Texto,Datos)).
@@ -416,10 +416,9 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 			Pid ! {hecho_hasta, NuInstancia},
 			bucle_recepcion(Servidores, Yo, PaxosData);
 
-		% Obtener min
-		{Pid, get_min} ->
-			Min = min_aux(Servidores, 0) + 1,
-			Pid ! {min, Min},
+		{Pid, get_node_min} ->
+			Min = datos_paxos:get_hecho_hasta(PaxosData),
+			Pid ! {node_min, Min},
 			bucle_recepcion(Servidores, Yo, PaxosData);
 
 		% Mensajes para proponente y aceptador del servidor local
@@ -530,11 +529,9 @@ estado(NodoPaxos, NuInstancia) ->
 		NuInstancia < MinInstancia ->
 			{false, null};
 		true ->
-			TimeOut = 300,
-			PaxosData = get_paxos_data(NodoPaxos, TimeOut),
+			PaxosData = get_paxos_data(NodoPaxos, ?TIMEOUT),
 			if
 				PaxosData == timeout ->
-					io:format("Instancia ~p~n", [{false, null}]),
 					{false, null};
 				true ->
 					datos_paxos:get_instancia(PaxosData, NuInstancia)
@@ -562,19 +559,21 @@ max(NodoPaxos) ->
 	err.
 
 %% Devuelve el minimo hecho_hasta recibido de todos los nodos
-min_aux([], Min_n) ->
+get_min_aux([], Min_n) ->
 	Min_n;
 
-min_aux([H|T], Min_n) ->
-	{paxos, H} ! {self(), get_min},
-	SvMin = get_msg(min),
+get_min_aux([H|T], Min_n) ->
+	{paxos, H} ! {self(), get_node_min},
+	SvMin = get_msg(node_min, ?TIMEOUT),
 	if
+		SvMin == timeout ->
+			get_min_aux(T, Min_n);
 		Min_n == none ->
-			min_aux(T, SvMin);
+			get_min_aux(T, SvMin);
 		SvMin < Min_n ->
-			min_aux(T, SvMin);
+			get_min_aux(T, SvMin);
 		true ->
-			min_aux(T, Min_n)
+			get_min_aux(T, Min_n)
 	end.
 
 %%-----------------------------------------------------------------------------
@@ -583,10 +582,9 @@ min_aux([H|T], Min_n) ->
 %Devuelve : NuInstancia = hecho + 1
 -spec min( node() ) -> non_neg_integer().
 min(NodoPaxos) ->
-	io:format("Entra min ~p~n", [NodoPaxos]),
-	%{paxos, NodoPaxos} ! {self(), get_min},
-	%get_msg(min).
-	1.
+	PaxosData = get_paxos_data(NodoPaxos),
+	Servidores = datos_paxos:get_servidores(PaxosData),
+	get_min_aux(Servidores, none).
 
 %%-----------------------------------------------------------------------------
 % Cambiar comportamiento de comunicación del Nodo Erlang a NO FIABLE
