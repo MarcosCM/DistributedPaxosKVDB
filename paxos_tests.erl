@@ -466,17 +466,30 @@ decision_en_particion_mayoritaria() ->
 %%%%%%%%%%%%%%%%% GENERADORES DE TEST %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 basicos() ->
-  helper:killall(),
-  unico_proponente(),
-  helper:killall(),
-  varios_propo_un_valor(),
-  helper:killall(),
-  varios_propo_varios_valores(),
-  helper:killall(),
-  instancias_fuera_orden(),
-  helper:killall(),
-  proponentes_sordos().
-  helper:killall().
+	helper:killall(),
+	unico_proponente(),
+	helper:killall(),
+	varios_propo_un_valor(),
+	helper:killall(),
+	varios_propo_varios_valores(),
+	helper:killall(),
+	instancias_fuera_orden(),
+	helper:killall(),
+	proponentes_sordos().
+	helper:killall().
+
+avanzados() ->
+	helper:killall(),
+	olvidando(),
+	helper:killall(),
+	muchas_instancias(),
+	helper:killall(),
+	muchas_instancias_no_fiable(),
+	helper:killall(),
+	no_hay_decision_si_particionado(),
+	helper:killall(),
+	decision_en_particion_mayoritaria(),
+	helper:killall().
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 
