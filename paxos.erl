@@ -1,10 +1,11 @@
 %% ----------------------------------------------------------------------------
-%% paxos : Modulo principal Paxos
+%% Modulo: paxos
 %%
-%% 
-%% 
-%% 
-%% 
+%% Descripcion : Modulo principal del algoritmo Paxos
+%%
+%% Esqueleto por : Unai Arronategui
+%% Autor : Marcos Canales Mayo
+%%
 %% ----------------------------------------------------------------------------
 
 
@@ -18,9 +19,8 @@
 
 -export([init/2]).
 
--export([proponente_start/4, proponente_wait_prepara/7, proponente_wait_acepta/5]).
--export([aceptador_start/2, aceptador_wait_msg/5]).
 -export([compare_n/2]).
+-export([get_paxos_data/2, get_paxos_data/1]).
 
 -define(TIMEOUT, 300).
 
@@ -37,16 +37,16 @@
 
 
 %% El que invoca a las funciones exportables es el nodo erlang maestro
-%%  que es cr4eado en otro programa...para arrancar los nodos réplica (con paxos)
+%%  que es creado en otro programa...para arrancar los nodos replica (con paxos)
 
 %% - Resto de nodos se arranca con slave:start(Host, Name, Args)
 %% - Entradas/Salidas de todos los nodos son redirigidos por Erlang a este nodo
 %%	   (es el funcionamiento especificado por modulo slave)
-%% - Todos los  nodos deben tener el mismo Sist de Fich. (NFS en distribuido ?)
+%% - Todos los nodos deben tener el mismo Sist de Fich. (NFS en distribuido ?)
  
 %% - Args contiene string con parametros para comando shell "erl"
-%% - Para la ejecución en línea de comandos shell de la VM Erlang, 
-%%   definir ssh en parámetro -rsh y habilitar authorized_keys en nodos remotos
+%% - Para la ejecucion en linea de comandos shell de la VM Erlang, 
+%%   definir ssh en parametro -rsh y habilitar authorized_keys en nodos remotos
 
 
 %%%%%%%%%%%% FUNCIONES EXPORTABLES  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -54,8 +54,8 @@
 
 %%-----------------------------------------------------------------------------
 %% Crear y poner en marcha un servidor Paxos
-%% Los nombres Erlang completos de todos los servidores están en Servidores
-%% Y el nombre de máquina y nombre nodo Erlang de este servidor están en 
+%% Los nombres Erlang completos de todos los servidores estan en Servidores
+%% Y el nombre de maquina y nombre nodo Erlang de este servidor estan en 
 %% Host y NombreNodo
 %% Devuelve :  ok.
 -spec start( list(node()), atom(), atom() ) -> ok.
@@ -76,7 +76,7 @@ init(Servidores, Yo) ->
 	bucle_recepcion(Servidores, Yo, PaxosData).
 
 %%-----------------------------------------------------------------------------
-%% petición de inicio de proceso de acuerdo para una instancia NuInstancia
+%% peticion de inicio de proceso de acuerdo para una instancia NuInstancia
 %% Con valor propuesto Valor.
 %% al servidor Paxos : NodoPaxos
 %% Devuelve de inmediato:  ok. 
@@ -92,8 +92,8 @@ start_instancia(NodoPaxos, NuInstancia, Valor) ->
 		true ->
 			{paxos, NodoPaxos} ! {self(), set_instancia, NuInstancia, {false, null}},
 			N = erlang:monotonic_time(),
-			spawn(NodoPaxos, ?MODULE, aceptador_start, [NodoPaxos, NuInstancia]),
-			spawn(NodoPaxos, ?MODULE, proponente_start, [NodoPaxos, NuInstancia, N, Valor]),
+			spawn(NodoPaxos, aceptador, aceptador_start, [NodoPaxos, NuInstancia]),
+			spawn(NodoPaxos, proponente, proponente_start, [NodoPaxos, NuInstancia, N, Valor]),
 			ok
 	end.
 
@@ -159,199 +159,6 @@ get_paxos_data(NodoPaxos, TimeOut) ->
 get_paxos_data(NodoPaxos) ->
 	{paxos, NodoPaxos} ! {self(), get_paxos_data},
 	get_msg(paxos_data).
-
-%% Iniciar proponente
-%% N = integer()
-proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
-	register(list_to_atom("proponente" ++ integer_to_list(NuInstancia)), self()),
-	io:format("Proponente ~p start Instancia ~p N ~p Valor ~p~n", [NodoPaxos, NuInstancia, N, Valor]),
-	% Lista de nodos
-	PaxosData = get_paxos_data(NodoPaxos),
-	Servidores = datos_paxos:get_servidores(PaxosData),
-	% Envia prepara(n)
-	lists:foreach(fun(Sv) ->
-		io:format("Enviando prepara a ~p~n", [Sv]),
-		{paxos, Sv} ! {self(), NuInstancia, prepara, {N, self()}}
-	end, Servidores),
-	% Espera a prepara_ok(n, n_a, v_a)
-	NeededVotes = trunc((length(Servidores) / 2) + 1),
-	{IsMajority, _ChosenN, ChosenV} = proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes,
-							{N, self()}, Valor,
-							{N, self()}, Valor),
-	if
-		% Si no recibe mayoria de prepara_ok entonces nueva proposicion
-		IsMajority == false ->
-			NewN = erlang:monotonic_time(),
-			proponente_start(NodoPaxos, NuInstancia, NewN, Valor);
-		% Si recibe mayoria de prepara_ok entonces pedimos mayoria de aceptadores
-		true ->
-			% Nueva instancia de Paxos
-			{paxos, NodoPaxos} ! {self(), set_instancia, NuInstancia, {false, null}},
-			% Solicitamos mayoria de aceptadores
-			lists:foreach(fun(Sv) ->
-				io:format("Proponente ~p enviando acepta a ~p~n", [NodoPaxos, Sv]),
-				{paxos, Sv} ! {self(), NuInstancia, acepta, {N, self()}, ChosenV}
-			end, Servidores),
-			% Esperamos a la mayoria de aceptadores
-			Decidido = proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, {N, self()}, ChosenV),
-			if
-				% No se ha llegado a consenso
-				Decidido == false ->
-					%%%%%%%%%
-					% TO DO %
-					%%%%%%%%%
-					not_decidido;
-				% Mayoria de aceptadores han llegado a consenso
-				true ->
-					%%%%%%%%%
-					% TO DO %
-					%%%%%%%%%
-					decidido
-			end
-	end.
-
-%% Mientras no tenga los prepara_ok necesarios
-%% N = {integer(), pid()}
-proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes, N, V, HighestN, HighestV) when NeededVotes > 0 ->
-	receive
-		{_Pid, NuInstancia, prepara_ok, N, N_a, V_a} ->
-			% Recibo un prepara_ok
-			Comparison = compare_n(HighestN, N_a),
-			if
-				Comparison == lower ->
-					proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes - 1,
-								N, V,
-								HighestN, HighestV);
-				true ->
-					proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes - 1,
-								N, V,
-								N_a, V_a)
-			end;
-		true ->
-			io:format("proponente_wait_prepara(): err~n", []),
-			%%%%%%%%%
-			% TO DO %
-			%%%%%%%%%
-			err
-	end;
-
-%% Cuando ya tengo los prepara_ok necesarios
-%% N = {integer(), pid()}
-proponente_wait_prepara(_NodoPaxos, NuInstancia, _NeededVotes, N, V, HighestN, HighestV) ->
-	Comparison = compare_n(N, HighestN),
-	if
-		% Mi N es el mayor
-		Comparison == lower->
-			ChosenN = N,
-			ChosenV = V;
-		% Hay un N mayor que el mio
-		true ->
-			ChosenN = HighestN,
-			ChosenV = HighestV
-	end,
-	io:format("Proponente pasa fase de preparacion instancia ~p~n", [NuInstancia]),
-	{true, ChosenN, ChosenV}.
-
-%% Mientras no tenga los acepta_ok necesarios
-%% N = {integer(), pid()}
-proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) when NeededVotes > 0 ->
-	receive
-		% Recibo un acepta_ok
-		{_Pid, NuInstancia, acepta_ok, N} ->
-			io:format("Proponente ~p recibe acepta_ok instancia: ~p~n", [NodoPaxos, NuInstancia]),
-			proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes - 1, N, V);
-		true ->
-			io:format("proponente_wait_acepta(): err~n", []),
-			%%%%%%%%%
-			% TO DO %
-			%%%%%%%%%
-			err
-	end;
-
-%% Cuando ya tengo los acepta_ok necesarios
-%% N = {integer(), pid()}
-proponente_wait_acepta(NodoPaxos, NuInstancia, _NeededVotes, _N, V) ->
-	io:format("Proponente ~p ya tiene los acepta_ok necesarios~n", [NodoPaxos]),
-	{paxos, NodoPaxos} ! {self(), instancia_decidida, NuInstancia, {true, V}}.
-
-%% Iniciar aceptador
-aceptador_start(NodoPaxos, NuInstancia) ->
-	register(list_to_atom("aceptador" ++ integer_to_list(NuInstancia)), self()),
-	aceptador_wait_msg(NodoPaxos, NuInstancia, {-1, self()}, {-1, self()}, null).
-
-%% Gestion del mensaje prepara en el aceptador
-%% N = {integer(), pid()}
-aceptador_msg_prepara(NodoPaxos, NuInstancia, Pid, N_recibido, N_p, N_a, V_a) ->
-	io:format("Nodo ~p recibe prepara de instancia ~p~n", [NodoPaxos, NuInstancia]),
-	% Comprobamos que el valor de la instancia no se encuentre decidido
-	PaxosData = get_paxos_data(NodoPaxos),
-	Instancias = datos_paxos:get_instancias(PaxosData),
-	Instancia = dict:find(NuInstancia, Instancias),
-	case Instancia of
-		% Si la instancia esta decidida
-		{ok, {true, Valor}} ->
-			{N_num, N_pid} = N_recibido,
-			% Enviamos prepara_ok con el valor de la instancia y un N mayor
-			Pid ! {self(), NuInstancia, prepara_ok, N_recibido, {N_num + 1, N_pid}, Valor};
-		% Sino
-		_ ->
-			% Comparamos N con N_p
-			Comparison = compare_n(N_p, N_recibido),
-			if
-				% Si N > N_p
-				Comparison == higher ->
-					io:format("Aceptador ~p enviando prepara_ok a ~p, instancia: ~p~n", [NodoPaxos, Pid, NuInstancia]),
-					% Envio prepara_ok y actualizo mi N_p
-					Pid ! {self(), NuInstancia, prepara_ok, N_recibido, N_a, V_a},
-					aceptador_wait_msg(NodoPaxos, NuInstancia, N_recibido, N_a, V_a);
-				% Sino
-				true ->
-					io:format("Aceptador ~p enviando prepara_reject a ~p, instancia: ~p~n", [NodoPaxos, Pid, NuInstancia]),
-					% Envio prepara_reject ya que su N es menor
-					Pid ! {self(), NuInstancia, prepara_reject, N_p},
-					aceptador_wait_msg(NodoPaxos, NuInstancia, N_p, N_a, V_a)
-			end
-	end.
-
-%% Gestion del mensaje acepta en el aceptador
-%% N = {integer(), pid()}
-aceptador_msg_acepta(NodoPaxos, NuInstancia, Pid, N_recibido, V_recibido, N_p, N_a, V_a) ->
-	io:format("Nodo ~p recibe acepta de instancia ~p~n", [NodoPaxos, NuInstancia]),
-	% Comparamos N con N_p
-	Comparison = compare_n(N_p, N_recibido),
-	if
-		% Si N >= N_p
-		(Comparison == higher) or (Comparison == same) ->
-			io:format("Aceptador ~p enviando acepta_ok a ~p, instancia: ~p~n", [NodoPaxos, Pid, NuInstancia]),
-			Pid ! {self(), NuInstancia, acepta_ok, N_recibido},
-			aceptador_wait_msg(NodoPaxos, NuInstancia, N_recibido, N_recibido, V_recibido);
-		% Sino
-		true ->
-			io:format("Aceptador ~p enviando acepta_reject a ~p, instancia: ~p~n", [NodoPaxos, Pid, NuInstancia]),
-			Pid ! {self(), NuInstancia, acepta_reject, N_p},
-			aceptador_wait_msg(NodoPaxos, NuInstancia, N_p, N_a, V_a)
-	end.
-
-%% Aceptador escuchando
-%% N = {integer(), pid()}
-aceptador_wait_msg(NodoPaxos, NuInstancia, N_p, N_a, V_a) ->
-	receive
-		% Recibo un prepara
-		{Pid, NuInstancia, prepara, N_recibido} ->
-			aceptador_msg_prepara(NodoPaxos, NuInstancia, Pid, N_recibido, N_p, N_a, V_a);
-		% Recibo un acepta
-		{Pid, NuInstancia, acepta, N_recibido, V_recibido} ->
-			aceptador_msg_acepta(NodoPaxos, NuInstancia, Pid, N_recibido, V_recibido, N_p, N_a, V_a);
-		% Ya hay consenso en un valor
-		{Pid, NuInstancia, decidido, Valor} ->
-			{paxos, NodoPaxos} ! {Pid, set_instancia, NuInstancia, Valor};
-		true ->
-			io:format("Aceptador ~p err~n", [NodoPaxos]),
-			%%%%%%%%%
-			% TO DO %
-			%%%%%%%%%
-			err
-	end.
 	
 %%-----------------------------------------------------------------------------
 bucle_recepcion(Servidores, Yo, PaxosData) ->
@@ -418,11 +225,6 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 			Pid ! {hecho_hasta, NuInstancia},
 			bucle_recepcion(Servidores, Yo, PaxosData);
 
-		{Pid, get_node_min} ->
-			Min = datos_paxos:get_hecho_hasta(PaxosData),
-			Pid ! {node_min, Min},
-			bucle_recepcion(Servidores, Yo, PaxosData);
-
 		% Mensajes para proponente y aceptador del servidor local
 		Mensajes_prop_y_acept ->
 			simula_fallo_mensj_prop_y_acep(Mensajes_prop_y_acept, Servidores, Yo, PaxosData),
@@ -447,8 +249,8 @@ check_aceptador_alive(NodoPaxos, NuInstancia) ->
 	Name = list_to_atom("aceptador" ++ integer_to_list(NuInstancia)),
 	AceptadorPid = whereis(Name),
 	if
-		AceptadorPid == undefined ->
-			spawn(NodoPaxos, ?MODULE, aceptador_start, [NodoPaxos, NuInstancia]);
+		undefined == AceptadorPid ->
+			spawn(NodoPaxos, aceptador, aceptador_start, [NodoPaxos, NuInstancia]);
 		true ->
 			AceptadorPid
 	end.
@@ -514,9 +316,9 @@ es_fiable(PaxosData) ->
 	datos_paxos:get_fiabilidad(PaxosData).
 
 %%-----------------------------------------------------------------------------
-%% La aplicación quiere saber si este servidor opina que
+%% La aplicacion quiere saber si este servidor opina que
 %% la instancia NuInstancia ya se ha decidido.
-%% Solo debe mirar el servidor NodoPaxos sin contactar con ningún otro
+%% Solo debe mirar el servidor NodoPaxos sin contactar con ningun otro
 %% Devuelve : {Decidido :: bool, Valor}
 -spec estado( node(), non_neg_integer() ) -> { boolean() , string() }.
 estado(NodoPaxos, NuInstancia) ->
@@ -537,16 +339,16 @@ estado(NodoPaxos, NuInstancia) ->
 	end.
 
 %%-----------------------------------------------------------------------------
-%% La aplicación en el servidor NodoPaxos ya ha terminado
+%% La aplicacion en el servidor NodoPaxos ya ha terminado
 %% con todas las instancias <= NuInstancia
-%% Mirar comentarios de min() para más explicaciones
+%% Mirar comentarios de min() para mas explicaciones
 %% Devuelve :  ok.
 -spec hecho( node(), non_neg_integer() ) -> ok.
 hecho(NodoPaxos, NuInstancia) ->
 	{paxos, NodoPaxos} ! {self(), set_hecho_hasta, NuInstancia}.
 
 %%-----------------------------------------------------------------------------
-%% Aplicación quiere saber el máximo número de instancia que ha visto
+%% Aplicacion quiere saber el maximo numero de instancia que ha visto
 %% este servidor NodoPaxos
 % Devuelve : NuInstancia
 -spec max( node() ) -> non_neg_integer().
@@ -566,8 +368,8 @@ get_min_aux([], Min_n) ->
 	Min_n;
 
 get_min_aux([H|T], Min_n) ->
-	{paxos, H} ! {self(), get_node_min},
-	SvMin = get_msg(node_min, ?TIMEOUT),
+	{paxos, H} ! {self(), get_hecho_hasta},
+	SvMin = get_msg(hecho_hasta, ?TIMEOUT),
 	if
 		SvMin == timeout ->
 			get_min_aux(T, Min_n);
@@ -581,7 +383,7 @@ get_min_aux([H|T], Min_n) ->
 
 %%-----------------------------------------------------------------------------
 % Minima instancia vigente de entre todos los nodos Paxos
-% Se calcula en función aceptador:modificar_state_inst_y_hechos
+% Se calcula en funcion aceptador:modificar_state_inst_y_hechos
 %Devuelve : NuInstancia = hecho + 1
 -spec min( node() ) -> non_neg_integer().
 min(NodoPaxos) ->
@@ -595,7 +397,7 @@ min(NodoPaxos) ->
 	end.
 
 %%-----------------------------------------------------------------------------
-% Cambiar comportamiento de comunicación del Nodo Erlang a NO FIABLE
+% Cambiar comportamiento de comunicacion del Nodo Erlang a NO FIABLE
 -spec comm_no_fiable( node() ) -> no_fiable.
 comm_no_fiable(Nodo) ->
 	{paxos, Nodo} ! no_fiable.

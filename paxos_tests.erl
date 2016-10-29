@@ -1,3 +1,12 @@
+%% ----------------------------------------------------------------------------
+%% Modulo: paxos_tests
+%%
+%% Descripcion : Tests para verificar correcto funcionamiento del modulo paxos
+%%
+%% Autor: Unai Arronategui 
+%%
+%% ----------------------------------------------------------------------------
+
 -module(paxos_tests).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -420,11 +429,12 @@ no_hay_decision_si_particionado() ->
     NumServ = 5,
     L_N = lists:seq(1,NumServ),
     S = servidores(L_N),
-    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X])) end, L_N),
+    lists:foreach(fun(X) ->
+    	paxos:start(S,?HOST,lists:concat([n,X])),
+    	particionar([servidores([1,2]), servidores([3]), servidores([4,5])])
+    end, L_N),
     
     timer:sleep(?T_ESPERA),
-    
-    particionar( [ servidores([1,2]), servidores([3]), servidores([4,5]) ] ),
 
     paxos:start_instancia('n2@127.0.0.1', 1, "11"),
     
@@ -446,11 +456,12 @@ decision_en_particion_mayoritaria() ->
     NumServ = 5,
     L_N = lists:seq(1,NumServ),
     S = servidores(L_N),
-    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X])) end, L_N),
+    lists:foreach(fun(X) ->
+    	paxos:start(S,?HOST,lists:concat([n,X])),
+    	particionar([servidores([1]), servidores([2, 3, 4]), servidores([5])])
+    end, L_N),
     
     timer:sleep(?T_ESPERA),
-    
-    particionar( [ servidores([1]), servidores([2, 3, 4]), servidores([5]) ] ),
 
     paxos:start_instancia('n2@127.0.0.1', 1, "11"),
     
@@ -465,7 +476,7 @@ decision_en_particion_mayoritaria() ->
     
 %%%%%%%%%%%%%%%%% GENERADORES DE TEST %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-basicos() ->
+fiables() ->
 	helper:killall(),
 	unico_proponente(),
 	helper:killall(),
@@ -476,19 +487,19 @@ basicos() ->
 	instancias_fuera_orden(),
 	helper:killall(),
 	proponentes_sordos(),
-	helper:killall().
-
-avanzados() ->
 	helper:killall(),
 	olvidando(),
 	helper:killall(),
 	muchas_instancias(),
 	helper:killall(),
-	muchas_instancias_no_fiable(),
-	helper:killall(),
 	no_hay_decision_si_particionado(),
 	helper:killall(),
 	decision_en_particion_mayoritaria(),
+	helper:killall().
+
+no_fiables() ->
+	helper:killall(),
+	muchas_instancias_no_fiable(),
 	helper:killall().
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

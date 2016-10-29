@@ -1,12 +1,12 @@
 %% ----------------------------------------------------------------------------
-%% paxos : Modulo la estructura de datos principal de Paxos
+%% Modulo: datos_paxos
 %%
-%% 
-%% 
-%% 
-%% 
+%% Descripcion : Estructura de datos utilizada en el algoritmo Paxos y funciones auxiliares
+%%
+%% Esqueleto por : Unai Arronategui
+%% Autor : Marcos Canales Mayo
+%%
 %% ----------------------------------------------------------------------------
-
 
 -module(datos_paxos).
 -compile(export_all).
