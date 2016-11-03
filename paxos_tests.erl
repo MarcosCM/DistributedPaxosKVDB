@@ -3,7 +3,9 @@
 %%
 %% Descripcion : Tests para verificar correcto funcionamiento del modulo paxos
 %%
-%% Autor: Unai Arronategui 
+%%
+%% Esqueleto por : Unai Arronategui
+%% Autor : Marcos Canales Mayo
 %%
 %% ----------------------------------------------------------------------------
 
@@ -16,14 +18,30 @@
 
 -define(T_ESPERA, 2000).
 
+-define(SV_DISPONIBLES, ['lab102-206', 'lab102-208', 'lab102-210']).
+
 
 %%%%%%%%%%%%%%%%%%%% FUNCIONES DE APOYO  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Funcion auxiliar para servidores/2
+servidores(0, _ServidoresDisponibles, _NextSv, Res) ->
+    Res;
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% devueve lista de nombres de servidores a aprtir de lista númerica
-servidores(Lista_Num) ->
-    [ list_to_atom(lists:concat([n, X, '@', ?HOST]) ) || X <- Lista_Num ].
-    
+servidores(Num_servidores, ServidoresDisponibles, NextSv, Res) ->
+    SvListLength = length(ServidoresDisponibles),
+    NextNodeName = list_to_atom(lists:concat([n, Num_servidores, '@', lists:nth(NextSv, ServidoresDisponibles)])),
+    if
+        NextSv == SvListLength ->
+            servidores(Num_servidores - 1, ServidoresDisponibles, 1, Res ++ [NextNodeName]);
+        true ->
+            servidores(Num_servidores - 1, ServidoresDisponibles, NextSv + 1, Res ++ [NextNodeName])
+    end.
+
+%% Devueve lista de nombres de nodos
+servidores(Num_servidores, ServidoresDisponibles) ->
+    servidores(Num_servidores, ServidoresDisponibles, 1, []).
+
+servidores(Num_servidores) ->
+    servidores(Num_servidores, ?SV_DISPONIBLES).
     
 %%%%%%%%%%%%%%%%%
 iguales([]) -> ok;
@@ -221,9 +239,15 @@ proponentes_sordos() ->
 
     % Crear 5 nodos Paxos
     NumServidores = 5,
-    L_N = lists:seq(1,NumServidores),
-    S = servidores(L_N),
-    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X])) end, L_N),
+    S = servidores(NumServidores, ?SV_DISPONIBLES),
+    lists:foreach(fun(X) ->
+        [SplitRes] = re:split(X, '@', [{return, list}, {parts, 2}]),
+        Node = lists:nth(1, SplitRes),
+        io:format("~p~n", [Node]),
+        Host = lists:nth(2, SplitRes),
+        io:format("~p~n", [Host]),
+        paxos:start(S, Host, Node)
+    end, S),
  
     timer:sleep(?T_ESPERA),
     
