@@ -21,6 +21,7 @@ proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
 	Servidores = datos_paxos:get_servidores(PaxosData),
 	NeededVotes = trunc((length(Servidores) / 2) + 1),
 	{IsMajority, _ChosenN, ChosenV} = proponente_fase_preparas(NodoPaxos, Servidores, NuInstancia, NeededVotes, N, Valor),
+	io:format("ChosenV: ~p~n", [ChosenV]),
 	if
 		% Si no recibe mayoria de prepara_ok entonces nueva proposicion
 		IsMajority == false ->
@@ -35,8 +36,8 @@ proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
 proponente_fase_preparas(NodoPaxos, Servidores, NuInstancia, NeededVotes, N, Valor) ->
 	% Envia prepara(n)
 	lists:foreach(fun(Sv) ->
-		io:format("Enviando prepara a ~p~n", [Sv]),
-		{paxos, Sv} ! {self(), NuInstancia, prepara, {N, self()}}
+		io:format("Enviando prepara a ~p: {~p, ~p}~n", [Sv, NuInstancia, N]),
+		{paxos, list_to_atom(lists:concat(["", Sv]))} ! {self(), NuInstancia, prepara, {N, self()}}
 	end, Servidores),
 	% Espera a prepara_ok(n, n_a, v_a)
 	proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes,
@@ -46,11 +47,11 @@ proponente_fase_preparas(NodoPaxos, Servidores, NuInstancia, NeededVotes, N, Val
 % Fase de solicitar y recibir aceptas
 proponente_fase_aceptas(NodoPaxos, Servidores, NuInstancia, NeededVotes, N, ChosenV) ->
 	% Nueva instancia de Paxos
-	{paxos, NodoPaxos} ! {self(), set_instancia, NuInstancia, {false, null}},
+	{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {self(), set_instancia, NuInstancia, {false, null}},
 	% Solicitamos mayoria de aceptadores
 	lists:foreach(fun(Sv) ->
 		io:format("Proponente ~p enviando acepta a ~p~n", [NodoPaxos, Sv]),
-		{paxos, Sv} ! {self(), NuInstancia, acepta, {N, self()}, ChosenV}
+		{paxos, list_to_atom(lists:concat(["", Sv]))} ! {self(), NuInstancia, acepta, {N, self()}, ChosenV}
 	end, Servidores),
 	% Esperamos a la mayoria de aceptadores
 	Decidido = proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, {N, self()}, ChosenV),
@@ -131,4 +132,4 @@ proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) when NeededVot
 %% N = {integer(), pid()}
 proponente_wait_acepta(NodoPaxos, NuInstancia, _NeededVotes, _N, V) ->
 	io:format("Proponente ~p ya tiene los acepta_ok necesarios~n", [NodoPaxos]),
-	{paxos, NodoPaxos} ! {self(), instancia_decidida, NuInstancia, {true, V}}.
+	{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {self(), instancia_decidida, NuInstancia, {true, V}}.

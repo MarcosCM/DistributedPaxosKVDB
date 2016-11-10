@@ -18,23 +18,39 @@
 
 -define(T_ESPERA, 2000).
 
--define(SV_DISPONIBLES, ['lab102-206', 'lab102-208', 'lab102-210']).
+-define(SV_DISPONIBLES, ['127.0.0.1']).
 
 
 %%%%%%%%%%%%%%%%%%%% FUNCIONES DE APOYO  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Crea nodos paxos en los servidores pasados por parametro
+paxos_start_nodes(S) ->
+	Servidores = sv_list_from_tuple(S),
+	lists:foreach(fun({NodeName, NodeIp}) ->
+        paxos:start(Servidores, NodeIp, NodeName)
+    end, S).
+
+sv_list_from_tuple(S) ->
+	lists:map(fun({NodeName, NodeIp}) ->
+		lists:concat([NodeName, '@', NodeIp])
+	end, S).
+
 %% Funcion auxiliar para servidores/2
 servidores(0, _ServidoresDisponibles, _NextSv, Res) ->
     Res;
 
 servidores(Num_servidores, ServidoresDisponibles, NextSv, Res) ->
-    SvListLength = length(ServidoresDisponibles),
-    NextNodeName = list_to_atom(lists:concat([n, Num_servidores, '@', lists:nth(NextSv, ServidoresDisponibles)])),
+    ServidoresLength = length(ServidoresDisponibles),
+    % {nX, SvIp}
+    NextNode = {list_to_atom(lists:concat([n, Num_servidores])), lists:nth(NextSv, ServidoresDisponibles)},
     if
-        NextSv == SvListLength ->
-            servidores(Num_servidores - 1, ServidoresDisponibles, 1, Res ++ [NextNodeName]);
+        NextSv == ServidoresLength ->
+            servidores(Num_servidores - 1, ServidoresDisponibles, 1, Res ++ [NextNode]);
         true ->
-            servidores(Num_servidores - 1, ServidoresDisponibles, NextSv + 1, Res ++ [NextNodeName])
+            servidores(Num_servidores - 1, ServidoresDisponibles, NextSv + 1, Res ++ [NextNode])
     end.
+
+servidores_original(Lista_Num) ->
+    [ list_to_atom(lists:concat([n, X, '@', ?HOST]) ) || X <- Lista_Num ].
 
 %% Devueve lista de nombres de nodos
 servidores(Num_servidores, ServidoresDisponibles) ->
@@ -131,10 +147,11 @@ comprobar_max(Servidores, NumInstancia, Max) ->
 unico_proponente() ->
     ?debugFmt("Test: Unico proponente ...~n",[]),
     
-    % Crear 3 nodos Paxos
-    Servidores = ['n1@127.0.0.1', 'n2@127.0.0.1', 'n3@127.0.0.1'],
-    lists:foreach(fun(Num) -> paxos:start(Servidores, '127.0.0.1', "n" ++ Num)
-                  end, ["1", "2", "3"] ),
+	% Crear 3 nodos Paxos
+    NumServidores = 3,
+    Svs = servidores(NumServidores, ?SV_DISPONIBLES),
+    Servidores = sv_list_from_tuple(Svs),
+    paxos_start_nodes(Svs),
  
     timer:sleep(?T_ESPERA),
      
@@ -145,7 +162,7 @@ unico_proponente() ->
     esperar_n_nodos(Servidores, 1, length(Servidores)),
     
     % parar VMs Erlang
-    lists:foreach(fun(S) -> paxos:stop(S) end, Servidores ),
+    lists:foreach(fun(S) -> paxos:stop(S) end, Servidores),
                   
     ?debugFmt(".... Superado~n",[]).
 
@@ -154,10 +171,11 @@ unico_proponente() ->
 varios_propo_un_valor() -> 
     ?debugFmt("Test: Varios propo., un valor ...~n",[]),
     
-    % Crear 3 nodos Paxos
-    Servidores = ['n1@127.0.0.1', 'n2@127.0.0.1', 'n3@127.0.0.1'],
-    lists:foreach(fun(Num) -> paxos:start(Servidores, '127.0.0.1', "n" ++ Num)
-                  end, ["1", "2", "3"] ),
+	% Crear 3 nodos Paxos
+    NumServidores = 3,
+    Svs = servidores(NumServidores, ?SV_DISPONIBLES),
+    Servidores = sv_list_from_tuple(Svs),
+    paxos_start_nodes(Svs),
  
     timer:sleep(?T_ESPERA),
                    
@@ -178,10 +196,11 @@ varios_propo_un_valor() ->
 varios_propo_varios_valores() -> 
     ?debugFmt("Test: Varios propo., varios valor ...~n",[]),
     
-    % Crear 3 nodos Paxos
-    Servidores = ['n1@127.0.0.1', 'n2@127.0.0.1', 'n3@127.0.0.1'],
-    lists:foreach(fun(Num) -> paxos:start(Servidores, '127.0.0.1', "n" ++ Num)
-                  end, ["1", "2", "3"] ),
+	% Crear 3 nodos Paxos
+    NumServidores = 3,
+    Svs = servidores(NumServidores, ?SV_DISPONIBLES),
+    Servidores = sv_list_from_tuple(Svs),
+    paxos_start_nodes(Svs),
  
     timer:sleep(?T_ESPERA),
                    
@@ -203,11 +222,11 @@ instancias_fuera_orden() ->
     ?debugFmt("Test: Instancias fuera de orden..~n",[]),
 
 
-    % Crear 3 nodos Paxos
+	% Crear 3 nodos Paxos
     NumServidores = 3,
-    Servidores = ['n1@127.0.0.1', 'n2@127.0.0.1', 'n3@127.0.0.1'],
-    lists:foreach(fun(Num) -> paxos:start(Servidores, '127.0.0.1', "n" ++ Num)
-                  end, ["1", "2", "3"] ),
+    Svs = servidores(NumServidores, ?SV_DISPONIBLES),
+    Servidores = sv_list_from_tuple(Svs),
+    paxos_start_nodes(Svs),
  
     timer:sleep(?T_ESPERA),
  
@@ -240,36 +259,30 @@ proponentes_sordos() ->
     % Crear 5 nodos Paxos
     NumServidores = 5,
     S = servidores(NumServidores, ?SV_DISPONIBLES),
-    lists:foreach(fun(X) ->
-        [SplitRes] = re:split(X, '@', [{return, list}, {parts, 2}]),
-        Node = lists:nth(1, SplitRes),
-        io:format("~p~n", [Node]),
-        Host = lists:nth(2, SplitRes),
-        io:format("~p~n", [Host]),
-        paxos:start(S, Host, Node)
-    end, S),
+    Servidores = sv_list_from_tuple(S),
+    paxos_start_nodes(S),
  
     timer:sleep(?T_ESPERA),
     
      paxos:start_instancia('n1@127.0.0.1', 1, "Buenas"), 
-    esperar_n_nodos(S, 1, NumServidores),
+    esperar_n_nodos(Servidores, 1, NumServidores),
      
     paxos:ponte_sordo('n1@127.0.0.1'),
     paxos:ponte_sordo('n5@127.0.0.1'),
   
     paxos:start_instancia('n2@127.0.0.1', 2, "Adios"),
-    esperar_mayoria(S, 2),
+    esperar_mayoria(Servidores, 2),
 %    timer:sleep(5),
-    N_decid = num_decididos(S, 2),
+    N_decid = num_decididos(Servidores, 2),
     if N_decid =/= (NumServidores - 2) -> exit("Algun sordo sabe decision!!");
        true -> ok
     end,
      
     paxos:escucha('n1@127.0.0.1'),
     paxos:start_instancia('n1@127.0.0.1', 2, "WWW"),
-    esperar_n_nodos(S, 2, NumServidores - 1),
+    esperar_n_nodos(Servidores, 2, NumServidores - 1),
 %    timer:sleep(5),
-    N2_decid = num_decididos(S, 2),
+    N2_decid = num_decididos(Servidores, 2),
     if N2_decid =/= (NumServidores -1) -> exit("Algun sordo sabe decision!!");
        true -> ok
     end,
@@ -277,11 +290,11 @@ proponentes_sordos() ->
     paxos:escucha('n5@127.0.0.1'),
 %    timer:sleep(5),
     paxos:start_instancia('n5@127.0.0.1', 2, "ZZZ"),
-    esperar_n_nodos(S, 2, NumServidores),
+    esperar_n_nodos(Servidores, 2, NumServidores),
    
     
     % parar VMs Erlang
-    lists:foreach(fun(X) -> paxos:stop(X) end, S ),
+    lists:foreach(fun(X) -> paxos:stop(X) end, Servidores),
                   
     ?debugFmt(".... Superado~n",[]).  
 
@@ -289,12 +302,13 @@ proponentes_sordos() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 olvidando() ->
     ?debugFmt("Test: Olvidando..~n",[]),
-    
-   % Crear 6 nodos Paxos
+
+	% Crear 6 nodos Paxos
     NumServidores = 6,
-    L_N = lists:seq(1,NumServidores),
-    S = servidores(L_N),
-    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X])) end, L_N),
+	L_N = lists:seq(1,NumServidores),
+    Svs = servidores(NumServidores, ?SV_DISPONIBLES),
+    S = sv_list_from_tuple(Svs),
+    paxos_start_nodes(Svs),
     
     timer:sleep(?T_ESPERA),
     
@@ -347,12 +361,12 @@ olvidando() ->
 muchas_instancias() ->
     ?debugFmt("Test: Muchas instancias..~n",[]),
     
-   % Crear 3 nodos Paxos
+	% Crear 3 nodos Paxos
     NumServ = 3,
-    L_N = lists:seq(1,NumServ),
-    S = servidores(L_N),
-    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X])) end, L_N),
-    
+	L_N = lists:seq(1,NumServ),
+    Svs = servidores(NumServ, ?SV_DISPONIBLES),
+    S = sv_list_from_tuple(Svs),
+    paxos_start_nodes(Svs),
     
     timer:sleep(?T_ESPERA),
         
@@ -391,12 +405,12 @@ muchas_instancias() ->
 muchas_instancias_no_fiable() ->
     ?debugFmt("Test: Muchas instancias comunicacion no fiable..~n",[]),
     
-   % Crear 3 nodos Paxos
+	% Crear 3 nodos Paxos
     NumServ = 3,
-    L_N = lists:seq(1,NumServ),
-    S = servidores(L_N),
-    lists:foreach(fun(X) -> paxos:start(S,?HOST,lists:concat([n,X])) end, L_N),
-    
+	L_N = lists:seq(1,NumServ),
+    Svs = servidores(NumServ, ?SV_DISPONIBLES),
+    S = sv_list_from_tuple(Svs),
+    paxos_start_nodes(Svs),
     
     timer:sleep(?T_ESPERA),
         
@@ -452,10 +466,11 @@ no_hay_decision_si_particionado() ->
    % Crear 5 nodos Paxos
     NumServ = 5,
     L_N = lists:seq(1,NumServ),
-    S = servidores(L_N),
+    Svs = servidores(NumServ),
+	S = sv_list_from_tuple(Svs),
     lists:foreach(fun(X) ->
     	paxos:start(S,?HOST,lists:concat([n,X])),
-    	particionar([servidores([1,2]), servidores([3]), servidores([4,5])])
+    	particionar([servidores_original([1,2]), servidores_original([3]), servidores_original([4,5])])
     end, L_N),
     
     timer:sleep(?T_ESPERA),
@@ -479,10 +494,11 @@ decision_en_particion_mayoritaria() ->
    % Crear 5 nodos Paxos
     NumServ = 5,
     L_N = lists:seq(1,NumServ),
-    S = servidores(L_N),
+    Svs = servidores(NumServ),
+	S = sv_list_from_tuple(Svs),
     lists:foreach(fun(X) ->
     	paxos:start(S,?HOST,lists:concat([n,X])),
-    	particionar([servidores([1]), servidores([2, 3, 4]), servidores([5])])
+    	particionar([servidores_original([1]), servidores_original([2, 3, 4]), servidores_original([5])])
     end, L_N),
     
     timer:sleep(?T_ESPERA),

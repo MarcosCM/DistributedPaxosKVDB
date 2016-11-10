@@ -60,7 +60,7 @@
 %% Devuelve :  ok.
 -spec start( list(node()), atom(), atom() ) -> ok.
 start(Servidores, Host, NombreNodo) ->
-	Args = "-setcookie palabrasecreta", % args para comando remoto erl
+	Args = '-noshell -rsh ssh -setcookie palabrasecreta -hosts 155.210.154.208', % args para comando remoto erl
 		% arranca servidor en nodo remoto
 	{ok, Nodo} = slave:start(Host, NombreNodo, Args),
 	io:format("Nodo esclavo en marcha~n",[]),
@@ -90,10 +90,10 @@ start_instancia(NodoPaxos, NuInstancia, Valor) ->
 		NuInstancia < MinInstancia ->
 			ya_existe_proponente;
 		true ->
-			{paxos, NodoPaxos} ! {self(), set_instancia, NuInstancia, {false, null}},
+			{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {self(), set_instancia, NuInstancia, {false, null}},
 			N = erlang:monotonic_time(),
-			spawn(NodoPaxos, aceptador, aceptador_start, [NodoPaxos, NuInstancia]),
-			spawn(NodoPaxos, proponente, proponente_start, [NodoPaxos, NuInstancia, N, Valor]),
+			spawn(list_to_atom(lists:concat(["", NodoPaxos])), aceptador, aceptador_start, [NodoPaxos, NuInstancia]),
+			spawn(list_to_atom(lists:concat(["", NodoPaxos])), proponente, proponente_start, [NodoPaxos, NuInstancia, N, Valor]),
 			ok
 	end.
 
@@ -104,6 +104,12 @@ start_instancia(NodoPaxos, NuInstancia, Valor) ->
 %% Si la nueva N es menor que la actual N devuelve lower
 compare_n({N, Id}, {NewN, NewId}) ->
 	if
+		(N == null) and (NewN == null) ->
+			same;
+		N == null ->
+			higher;
+		NewN == null ->
+			lower;
 		(NewN > N) or ((NewN == N) and (NewId > Id)) ->
 			higher;
 		(NewN == N) and (Id == NewId) ->
@@ -152,12 +158,12 @@ get_msg(MsgType) ->
 
 % Obtener estructura de datos Paxos con tiempo de timeout
 get_paxos_data(NodoPaxos, TimeOut) ->
-	{paxos, NodoPaxos} ! {self(), get_paxos_data},
+	{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {self(), get_paxos_data},
 	get_msg(paxos_data, TimeOut).
 
 % Obtener estructura de datos Paxos sin tiempo de timeout
 get_paxos_data(NodoPaxos) ->
-	{paxos, NodoPaxos} ! {self(), get_paxos_data},
+	{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {self(), get_paxos_data},
 	get_msg(paxos_data).
 	
 %%-----------------------------------------------------------------------------
@@ -210,7 +216,7 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 		{_Pid, instancia_decidida, NuInstancia, Valor} ->
 			NewPaxosData = datos_paxos:set_instancia(PaxosData, NuInstancia, Valor),
 			lists:foreach(fun(Sv) ->
-				{paxos, Sv} ! {self(), NuInstancia, decidido, Valor}
+				{paxos, list_to_atom(lists:concat(["", Sv]))} ! {self(), NuInstancia, decidido, Valor}
 			end, Servidores),
 			bucle_recepcion(Servidores, Yo, NewPaxosData);
 
@@ -345,7 +351,7 @@ estado(NodoPaxos, NuInstancia) ->
 %% Devuelve :  ok.
 -spec hecho( node(), non_neg_integer() ) -> ok.
 hecho(NodoPaxos, NuInstancia) ->
-	{paxos, NodoPaxos} ! {self(), set_hecho_hasta, NuInstancia}.
+	{paxos, list_to_atom(NodoPaxos)} ! {self(), set_hecho_hasta, NuInstancia}.
 
 %%-----------------------------------------------------------------------------
 %% Aplicacion quiere saber el maximo numero de instancia que ha visto
@@ -368,7 +374,7 @@ get_min_aux([], Min_n) ->
 	Min_n;
 
 get_min_aux([H|T], Min_n) ->
-	{paxos, H} ! {self(), get_hecho_hasta},
+	{paxos, list_to_atom(lists:concat(["", H]))} ! {self(), get_hecho_hasta},
 	SvMin = get_msg(hecho_hasta, ?TIMEOUT),
 	if
 		SvMin == timeout ->
@@ -430,7 +436,7 @@ escucha(NodoPaxos) ->
 %% Parar nodo Erlang remoto
 -spec stop( node() ) -> ok.
 stop(NodoPaxos) ->
-	slave:stop(NodoPaxos),
+	slave:stop(list_to_atom(NodoPaxos)),
 	vaciar_buzon().
 	
 %%-----------------------------------------------------------------------------
@@ -446,5 +452,5 @@ vaciar_buzon() ->
 %% Obtener numero de mensajes recibidos en un nodo
 -spec n_mensajes( node() ) -> non_neg_integer().
 n_mensajes(NodoPaxos) ->
-		{paxos, NodoPaxos} ! {n_mensajes, self()},
+		{paxos, list_to_atom(NodoPaxos)} ! {n_mensajes, self()},
 		receive Respuesta -> Respuesta end.

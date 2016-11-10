@@ -14,7 +14,7 @@
 %% Iniciar aceptador
 aceptador_start(NodoPaxos, NuInstancia) ->
 	register(list_to_atom("aceptador" ++ integer_to_list(NuInstancia)), self()),
-	aceptador_wait_msg(NodoPaxos, NuInstancia, {-1, self()}, {-1, self()}, null).
+	aceptador_wait_msg(NodoPaxos, NuInstancia, {null, self()}, {null, self()}, null).
 
 %% Aceptador escuchando
 %% N = {integer(), pid()}
@@ -28,7 +28,7 @@ aceptador_wait_msg(NodoPaxos, NuInstancia, N_p, N_a, V_a) ->
 			aceptador_msg_acepta(NodoPaxos, NuInstancia, Pid, N_recibido, V_recibido, N_p, N_a, V_a);
 		% Ya hay consenso en un valor
 		{Pid, NuInstancia, decidido, Valor} ->
-			{paxos, NodoPaxos} ! {Pid, set_instancia, NuInstancia, Valor};
+			{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {Pid, set_instancia, NuInstancia, Valor};
 		true ->
 			io:format("Aceptador ~p err~n", [NodoPaxos]),
 			%%%%%%%%%
