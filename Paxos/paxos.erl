@@ -60,7 +60,7 @@
 %% Devuelve :  ok.
 -spec start( list(node()), atom(), atom() ) -> ok.
 start(Servidores, Host, NombreNodo) ->
-	Args = '-noshell -rsh ssh -setcookie palabrasecreta -hosts 155.210.154.208', % args para comando remoto erl
+	Args = '-setcookie \'palabrasecreta\'', % args para comando remoto erl
 		% arranca servidor en nodo remoto
 	{ok, Nodo} = slave:start(Host, NombreNodo, Args),
 	io:format("Nodo esclavo en marcha~n",[]),
@@ -220,15 +220,15 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 			end, Servidores),
 			bucle_recepcion(Servidores, Yo, NewPaxosData);
 
-		% Actualiza el valor de hecho_hasta
-		{_Pid, set_hecho_hasta, NuInstancia} ->
-			NewPaxosData = datos_paxos:set_hecho_hasta(PaxosData, NuInstancia),
+		% Actualiza el valor de hecho
+		{_Pid, set_hecho, Servidor, NuInstancia} ->
+			NewPaxosData = datos_paxos:set_hecho(PaxosData, Servidor, NuInstancia),
 			bucle_recepcion(Servidores, Yo, NewPaxosData);
 
-		% Obtener hecho_hasta
-		{Pid, get_hecho_hasta} ->
-			NuInstancia = datos_paxos:get_hecho_hasta(PaxosData),
-			Pid ! {hecho_hasta, NuInstancia},
+		% Obtener hecho
+		{Pid, get_hecho} ->
+			NuInstancia = datos_paxos:get_hecho(PaxosData),
+			Pid ! {hecho, NuInstancia},
 			bucle_recepcion(Servidores, Yo, PaxosData);
 
 		% Mensajes para proponente y aceptador del servidor local
@@ -351,7 +351,11 @@ estado(NodoPaxos, NuInstancia) ->
 %% Devuelve :  ok.
 -spec hecho( node(), non_neg_integer() ) -> ok.
 hecho(NodoPaxos, NuInstancia) ->
-	{paxos, list_to_atom(NodoPaxos)} ! {self(), set_hecho_hasta, NuInstancia}.
+	PaxosData = get_paxos_data(NodoPaxos),
+	Servidores = datos_paxos:get_servidores(PaxosData),
+	lists:foreach(fun(Sv) ->
+		{paxos, list_to_atom(lists:concat(["", Sv]))} ! {self(), set_hecho, NodoPaxos, NuInstancia}
+	end, Servidores).
 
 %%-----------------------------------------------------------------------------
 %% Aplicacion quiere saber el maximo numero de instancia que ha visto
@@ -369,24 +373,6 @@ max(NodoPaxos) ->
 			lists:max(InstanciasKeys)
 	end.
 
-%% Devuelve el minimo hecho_hasta recibido de todos los nodos
-get_min_aux([], Min_n) ->
-	Min_n;
-
-get_min_aux([H|T], Min_n) ->
-	{paxos, list_to_atom(lists:concat(["", H]))} ! {self(), get_hecho_hasta},
-	SvMin = get_msg(hecho_hasta, ?TIMEOUT),
-	if
-		SvMin == timeout ->
-			get_min_aux(T, Min_n);
-		Min_n == none ->
-			get_min_aux(T, SvMin);
-		SvMin < Min_n ->
-			get_min_aux(T, SvMin);
-		true ->
-			get_min_aux(T, Min_n)
-	end.
-
 %%-----------------------------------------------------------------------------
 % Minima instancia vigente de entre todos los nodos Paxos
 % Se calcula en funcion aceptador:modificar_state_inst_y_hechos
@@ -398,15 +384,14 @@ min(NodoPaxos) ->
 		PaxosData == timeout ->
 			timeout;
 		true ->
-			Servidores = datos_paxos:get_servidores(PaxosData),
-			get_min_aux(Servidores, none) + 1
+			datos_paxos:get_min_hecho(PaxosData) + 1
 	end.
 
 %%-----------------------------------------------------------------------------
 % Cambiar comportamiento de comunicacion del Nodo Erlang a NO FIABLE
 -spec comm_no_fiable( node() ) -> no_fiable.
 comm_no_fiable(Nodo) ->
-	{paxos, Nodo} ! no_fiable.
+	{paxos, list_to_atom(lists:concat(["", Nodo]))} ! no_fiable.
 	
 	
 %%%%%%%%%%%%%%%%%%

@@ -19,12 +19,12 @@
             servidores = [],
 		% pid()
             yo,
-		% dict NuRegistro -> Valor :: any()
+		% dict NuRegistro :: pos_integer() -> Valor :: any()
             registros = dict:new(),
-		% dict NuInstancia -> {Decidido :: boolean(), Valor :: any()}
+		% dict NuInstancia :: pos_integer() -> {Decidido :: boolean(), Valor :: any()}
 			instancias = dict:new(),
-		% pos_integer()
-			hecho_hasta = 0
+		% dict Servidor :: pos_integer() -> NuInstancia :: pos_integer()
+			hecho = dict:new()
 		}).
 
 %%%%%%%%%%% FUNCIONES DE ACCESO Y MANIPULACION DE LA ESTRUCTURA DE DATOS
@@ -79,13 +79,56 @@ get_instancia(PaxosData, NuInstancia) ->
 set_instancia(PaxosData, NuInstancia, Valor) ->
 	PaxosData#paxos{instancias = dict:store(NuInstancia, Valor, PaxosData#paxos.instancias)}.
 
-get_hecho_hasta(PaxosData) ->
-	PaxosData#paxos.hecho_hasta.
+get_hecho(PaxosData) ->
+	PaxosData#paxos.hecho.
 
-set_hecho_hasta(PaxosData, NuInstancia) ->
+hecho_clean_instancias(PaxosData) ->
+	Min_hecho = get_min_hecho(PaxosData),
+	dict:filter(fun(Key, _Value) ->
+		Key > Min_hecho
+	end, PaxosData#paxos.instancias).
+
+set_hecho(PaxosData, Servidor, NuInstancia) ->
+	SvHecho = dict:find(Servidor, PaxosData#paxos.hecho),
 	if
-		NuInstancia < PaxosData#paxos.hecho_hasta ->
-			PaxosData;
+		% No existe entrada
+		SvHecho == error ->
+			% En dos pasos, dado que para limpiar instancias es primero necesario tener los valores de hecho actualizados
+			PaxosDataHechoUpd = PaxosData#paxos{hecho = dict:store(Servidor, NuInstancia, PaxosData#paxos.hecho)},
+			PaxosDataHechoUpd#paxos{instancias = hecho_clean_instancias(PaxosData)};
+		% Existe entrada
 		true ->
-			PaxosData#paxos{hecho_hasta = NuInstancia}
+			{ok, Val} = SvHecho,
+			if
+				% Los mensajes pueden llegar fuera de orden, por lo que esta comprobacion es necesaria
+				NuInstancia =< Val ->
+					PaxosData;
+				true ->
+					% En dos pasos, dado que para limpiar instancias es primero necesario tener los valores de hecho actualizados
+					PaxosDataHechoUpd = PaxosData#paxos{hecho = dict:store(Servidor, NuInstancia, PaxosData#paxos.hecho)},
+					PaxosDataHechoUpd#paxos{instancias = hecho_clean_instancias(PaxosData)}
+			end
 	end.
+
+get_min_hecho_aux([], Min_hecho) ->
+	if
+		Min_hecho == none ->
+			0;
+		true ->
+			Min_hecho
+	end;
+
+get_min_hecho_aux([{Key, Value}|T], Min_hecho) ->
+	%io:format("~p tiene hecho ~p~n", [Key, Value]),
+	if
+		Min_hecho == none ->
+			get_min_hecho_aux(T, Value);
+		Value < Min_hecho ->
+			get_min_hecho_aux(T, Value);
+		true ->
+			get_min_hecho_aux(T, Min_hecho)
+	end.
+
+get_min_hecho(PaxosData) ->
+	ListaHecho = dict:to_list(PaxosData#paxos.hecho),
+	get_min_hecho_aux(ListaHecho, none).
