@@ -15,13 +15,13 @@
 %% N = integer()
 proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
 	register(list_to_atom("proponente" ++ integer_to_list(NuInstancia)), self()),
-	io:format("Proponente ~p start Instancia ~p N ~p Valor ~p~n", [NodoPaxos, NuInstancia, N, Valor]),
+	%io:format("Proponente ~p start Instancia ~p N ~p Valor ~p~n", [NodoPaxos, NuInstancia, N, Valor]),
 	% Lista de nodos
 	PaxosData = paxos:get_paxos_data(NodoPaxos),
 	Servidores = datos_paxos:get_servidores(PaxosData),
 	NeededVotes = trunc((length(Servidores) / 2) + 1),
 	{IsMajority, _ChosenN, ChosenV} = proponente_fase_preparas(NodoPaxos, Servidores, NuInstancia, NeededVotes, N, Valor),
-	io:format("ChosenV: ~p~n", [ChosenV]),
+	%io:format("ChosenV: ~p~n", [ChosenV]),
 	if
 		% Si no recibe mayoria de prepara_ok entonces nueva proposicion
 		IsMajority == false ->
@@ -36,7 +36,7 @@ proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
 proponente_fase_preparas(NodoPaxos, Servidores, NuInstancia, NeededVotes, N, Valor) ->
 	% Envia prepara(n)
 	lists:foreach(fun(Sv) ->
-		io:format("Enviando prepara a ~p: {~p, ~p}~n", [Sv, NuInstancia, N]),
+		%io:format("Enviando prepara a ~p: {~p, ~p}~n", [Sv, NuInstancia, N]),
 		{paxos, list_to_atom(lists:concat(["", Sv]))} ! {self(), NuInstancia, prepara, {N, self()}}
 	end, Servidores),
 	% Espera a prepara_ok(n, n_a, v_a)
@@ -50,7 +50,7 @@ proponente_fase_aceptas(NodoPaxos, Servidores, NuInstancia, NeededVotes, N, Chos
 	{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {self(), set_instancia, NuInstancia, {false, null}},
 	% Solicitamos mayoria de aceptadores
 	lists:foreach(fun(Sv) ->
-		io:format("Proponente ~p enviando acepta a ~p~n", [NodoPaxos, Sv]),
+		%io:format("Proponente ~p enviando acepta a ~p~n", [NodoPaxos, Sv]),
 		{paxos, list_to_atom(lists:concat(["", Sv]))} ! {self(), NuInstancia, acepta, {N, self()}, ChosenV}
 	end, Servidores),
 	% Esperamos a la mayoria de aceptadores
@@ -88,7 +88,7 @@ proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes, N, V, HighestN, Hig
 								N_a, V_a)
 			end;
 		true ->
-			io:format("proponente_wait_prepara(): err~n", []),
+			%io:format("proponente_wait_prepara(): err~n", []),
 			%%%%%%%%%
 			% TO DO %
 			%%%%%%%%%
@@ -97,7 +97,7 @@ proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes, N, V, HighestN, Hig
 
 %% Cuando ya tengo los prepara_ok necesarios
 %% N = {integer(), pid()}
-proponente_wait_prepara(_NodoPaxos, NuInstancia, _NeededVotes, N, V, HighestN, HighestV) ->
+proponente_wait_prepara(_NodoPaxos, _NuInstancia, _NeededVotes, N, V, HighestN, HighestV) ->
 	Comparison = paxos:compare_n(N, HighestN),
 	if
 		% Mi N es el mayor
@@ -109,7 +109,7 @@ proponente_wait_prepara(_NodoPaxos, NuInstancia, _NeededVotes, N, V, HighestN, H
 			ChosenN = HighestN,
 			ChosenV = HighestV
 	end,
-	io:format("Proponente pasa fase de preparacion instancia ~p~n", [NuInstancia]),
+	%io:format("Proponente pasa fase de preparacion instancia ~p~n", [NuInstancia]),
 	{true, ChosenN, ChosenV}.
 
 %% Mientras no tenga los acepta_ok necesarios
@@ -118,10 +118,10 @@ proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) when NeededVot
 	receive
 		% Recibo un acepta_ok
 		{_Pid, NuInstancia, acepta_ok, N} ->
-			io:format("Proponente ~p recibe acepta_ok instancia: ~p~n", [NodoPaxos, NuInstancia]),
+			%io:format("Proponente ~p recibe acepta_ok instancia: ~p~n", [NodoPaxos, NuInstancia]),
 			proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes - 1, N, V);
 		true ->
-			io:format("proponente_wait_acepta(): err~n", []),
+			%io:format("proponente_wait_acepta(): err~n", []),
 			%%%%%%%%%
 			% TO DO %
 			%%%%%%%%%
@@ -131,5 +131,5 @@ proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) when NeededVot
 %% Cuando ya tengo los acepta_ok necesarios
 %% N = {integer(), pid()}
 proponente_wait_acepta(NodoPaxos, NuInstancia, _NeededVotes, _N, V) ->
-	io:format("Proponente ~p ya tiene los acepta_ok necesarios~n", [NodoPaxos]),
+	%io:format("Proponente ~p ya tiene los acepta_ok necesarios~n", [NodoPaxos]),
 	{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {self(), instancia_decidida, NuInstancia, {true, V}}.

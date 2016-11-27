@@ -24,40 +24,58 @@
 		% dict NuInstancia :: pos_integer() -> {Decidido :: boolean(), Valor :: any()}
 			instancias = dict:new(),
 		% dict Servidor :: pos_integer() -> NuInstancia :: pos_integer()
-			hecho = dict:new()
+			hecho = dict:new(),
+		% pos_integer()
+			max = 0
 		}).
 
 %%%%%%%%%%% FUNCIONES DE ACCESO Y MANIPULACION DE LA ESTRUCTURA DE DATOS
 new_paxos_data(Servidores, Yo) ->
 	#paxos{servidores=Servidores, yo=Yo}.
 
-remove_instancia(PaxosData, NuInstancia) ->
-	PaxosData#paxos{instancias = dict:erase(NuInstancia, PaxosData#paxos.instancias)}.
-
+% registros
 set_registro(PaxosData, NuRegistro, Valor) ->
+	%io:format("Registro ~p = Valor ~p~n", [NuRegistro, Valor]),
 	PaxosData#paxos{registros = dict:store(NuRegistro, Valor, PaxosData#paxos.registros)}.
 
-remove_registro(PaxosData, NuRegistro) ->
-	PaxosData#paxos{registros = dict:erase(NuRegistro, PaxosData#paxos.registros)}.
+get_registros(PaxosData) ->
+	PaxosData#paxos.registros.
 
+get_registro(PaxosData, NuInstancia) ->
+	Registros = datos_paxos:get_registros(PaxosData),
+	Registro = dict:find(NuInstancia, Registros),
+	if
+		% Si la instancia no esta almacenada
+		Registro == error ->
+			%io:format("Registro ~p~n", [{false, null}]),
+			{false, null};
+		% Si esta almacenada devolvemos su valor
+		true ->
+			{ok, ValorRegistro} = Registro,
+			%io:format("Registro ~p~n", [ValorRegistro]),
+			ValorRegistro
+	end.
+
+% fiabilidad
 get_fiabilidad(PaxosData) ->
 	PaxosData#paxos.fiabilidad.
 
 set_fiabilidad(PaxosData, Fiabilidad) ->
 	PaxosData#paxos{fiabilidad = Fiabilidad}.
 
+% num_mensajes
 get_num_mensajes(PaxosData) ->
 	PaxosData#paxos.num_mensajes.
 
+% servidores
 get_servidores(PaxosData) ->
 	PaxosData#paxos.servidores.
 
+% yo
 get_yo(PaxosData) ->
 	PaxosData#paxos.yo.
 
-get_registros(PaxosData) ->
-	PaxosData#paxos.registros.
-
+% instancias
 get_instancias(PaxosData) ->
 	PaxosData#paxos.instancias.
 
@@ -67,26 +85,24 @@ get_instancia(PaxosData, NuInstancia) ->
 	if
 		% Si la instancia no esta almacenada
 		Instancia == error ->
-			io:format("Instancia ~p~n", [{false, null}]),
+			%io:format("Instancia ~p~n", [{false, null}]),
 			{false, null};
 		% Si esta almacenada devolvemos su valor
 		true ->
 			{ok, ValorInstancia} = Instancia,
-			io:format("Instancia ~p~n", [ValorInstancia]),
+			%io:format("Instancia ~p~n", [ValorInstancia]),
 			ValorInstancia
 	end.
 
 set_instancia(PaxosData, NuInstancia, Valor) ->
 	PaxosData#paxos{instancias = dict:store(NuInstancia, Valor, PaxosData#paxos.instancias)}.
 
+remove_instancia(PaxosData, NuInstancia) ->
+	PaxosData#paxos{instancias = dict:erase(NuInstancia, PaxosData#paxos.instancias)}.
+
+% hecho
 get_hecho(PaxosData) ->
 	PaxosData#paxos.hecho.
-
-hecho_clean_instancias(PaxosData) ->
-	Min_hecho = get_min_hecho(PaxosData),
-	dict:filter(fun(Key, _Value) ->
-		Key > Min_hecho
-	end, PaxosData#paxos.instancias).
 
 set_hecho(PaxosData, Servidor, NuInstancia) ->
 	SvHecho = dict:find(Servidor, PaxosData#paxos.hecho),
@@ -110,6 +126,25 @@ set_hecho(PaxosData, Servidor, NuInstancia) ->
 			end
 	end.
 
+hecho_clean_instancias(PaxosData) ->
+	Min_hecho = get_min_hecho(PaxosData),
+	dict:filter(fun(Key, _Value) ->
+		Key > Min_hecho
+	end, PaxosData#paxos.instancias).
+
+% max()
+get_max(PaxosData) ->
+	PaxosData#paxos.max.
+
+set_max(PaxosData, Max) ->
+	if
+		PaxosData#paxos.max > Max ->
+			PaxosData;
+		true ->
+			PaxosData#paxos{max = Max}
+	end.
+
+% min()
 get_min_hecho_aux([], Min_hecho) ->
 	if
 		Min_hecho == none ->
@@ -118,7 +153,7 @@ get_min_hecho_aux([], Min_hecho) ->
 			Min_hecho
 	end;
 
-get_min_hecho_aux([{Key, Value}|T], Min_hecho) ->
+get_min_hecho_aux([{_Key, Value}|T], Min_hecho) ->
 	%io:format("~p tiene hecho ~p~n", [Key, Value]),
 	if
 		Min_hecho == none ->

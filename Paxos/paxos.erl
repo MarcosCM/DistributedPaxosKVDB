@@ -11,7 +11,7 @@
 
 -module(paxos).
 
--export([start/3, start_instancia/3, estado/2, hecho/2, max/1, min/1]).
+-export([start/2, start_instancia/3, estado/2, hecho/2, max/1, min/1]).
 
 -export([comm_no_fiable/1, limitar_acceso/2, stop/1, vaciar_buzon/0]).
 -export([n_mensajes/1]).
@@ -58,20 +58,14 @@
 %% Y el nombre de maquina y nombre nodo Erlang de este servidor estan en 
 %% Host y NombreNodo
 %% Devuelve :  ok.
--spec start( list(node()), atom(), atom() ) -> ok.
-start(Servidores, Host, NombreNodo) ->
-	Args = '-setcookie \'palabrasecreta\'', % args para comando remoto erl
-		% arranca servidor en nodo remoto
-	{ok, Nodo} = slave:start(Host, NombreNodo, Args),
-	io:format("Nodo esclavo en marcha~n",[]),
+-spec start( list(node()), atom() ) -> ok.
+start(Servidores, Nodo) ->
 	process_flag(trap_exit, true),
 	spawn_link(Nodo, ?MODULE, init, [Servidores, Nodo]).
 
 %%-----------------------------------------------------------------------------
 init(Servidores, Yo) ->
 	register(paxos, self()),
-	%%%%% VUESTRO CODIGO DE INICIALIZACION AQUI
-
 	PaxosData = datos_paxos:new_paxos_data(Servidores, Yo),
 	bucle_recepcion(Servidores, Yo, PaxosData).
 
@@ -82,7 +76,6 @@ init(Servidores, Yo) ->
 %% Devuelve de inmediato:  ok. 
 -spec start_instancia( node(), non_neg_integer(), string() ) -> ok.
 start_instancia(NodoPaxos, NuInstancia, Valor) ->
-	%%%%% VUESTRO CODIGO AQUI
 	MinInstancia = min(NodoPaxos),
 	if
 		MinInstancia == timeout ->
@@ -118,53 +111,15 @@ compare_n({N, Id}, {NewN, NewId}) ->
 			lower
 	end.
 
-%% Reenviar mensajes almacenados en el buffer
-resend_msg_buff([]) ->
-	buff_empty;
-
-resend_msg_buff([H|T]) ->
-	self() ! H,
-	resend_msg_buff(T).
-
-%% Obtener mensaje de un tipo concreto con un tiempo de timeout
-get_msg_aux(MsgType, MsgBuff, TimeOut) ->
-	receive
-		{MsgType, Data} ->
-			resend_msg_buff(MsgBuff),
-			Data;
-		Msg ->
-			get_msg_aux(MsgType, MsgBuff ++ [Msg])
-	after TimeOut ->
-		timeout
-	end.
-
-%% Obtener mensaje de un tipo concreto con tiempo de timeout
-get_msg(MsgType, TimeOut) ->
-	get_msg_aux(MsgType, [], TimeOut).
-
-%% Obtener mensaje de un tipo concreto sin tiempo de timeout
-get_msg_aux(MsgType, MsgBuff) ->
-	receive
-		{MsgType, Data} ->
-			resend_msg_buff(MsgBuff),
-			Data;
-		Msg ->
-			get_msg_aux(MsgType, MsgBuff ++ [Msg])
-	end.
-
-%% Obtener mensaje de un tipo concreto sin tiempo de timeout
-get_msg(MsgType) ->
-	get_msg_aux(MsgType, []).
-
 % Obtener estructura de datos Paxos con tiempo de timeout
 get_paxos_data(NodoPaxos, TimeOut) ->
 	{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {self(), get_paxos_data},
-	get_msg(paxos_data, TimeOut).
+	comun:get_msg(paxos_data, TimeOut).
 
 % Obtener estructura de datos Paxos sin tiempo de timeout
 get_paxos_data(NodoPaxos) ->
 	{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {self(), get_paxos_data},
-	get_msg(paxos_data).
+	comun:get_msg(paxos_data).
 	
 %%-----------------------------------------------------------------------------
 bucle_recepcion(Servidores, Yo, PaxosData) ->
@@ -200,12 +155,17 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 			%%%%%%%%%
 			bucle_recepcion(Servidores, Yo, PaxosData);
 
-		%%%%% VUESTRO CODIGO AQUI
+
 
 		% Obtener estructura de datos
 		{Pid, get_paxos_data} ->
 			Pid ! {paxos_data, PaxosData},
 			bucle_recepcion(Servidores, Yo, PaxosData);
+
+		% Actualizar un registro
+		{_Pid, set_registro, NuInstancia, Valor} ->
+			NewPaxosData = datos_paxos:set_registro(PaxosData, NuInstancia, Valor),
+			bucle_recepcion(Servidores, Yo, NewPaxosData);
 
 		% Actualizar una instancia
 		{_Pid, set_instancia, NuInstancia, Valor} ->
@@ -214,11 +174,12 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 
 		% Consenso en un valor del registro: actualizar y propagar al resto de nodos
 		{_Pid, instancia_decidida, NuInstancia, Valor} ->
-			NewPaxosData = datos_paxos:set_instancia(PaxosData, NuInstancia, Valor),
+			% No es necesario actualizar aqui, ya lo hace el aceptador cuando le llega el "decidido"
+			% NewPaxosData = datos_paxos:set_instancia(PaxosData, NuInstancia, Valor),
 			lists:foreach(fun(Sv) ->
 				{paxos, list_to_atom(lists:concat(["", Sv]))} ! {self(), NuInstancia, decidido, Valor}
 			end, Servidores),
-			bucle_recepcion(Servidores, Yo, NewPaxosData);
+			bucle_recepcion(Servidores, Yo, PaxosData);
 
 		% Actualiza el valor de hecho
 		{_Pid, set_hecho, Servidor, NuInstancia} ->
@@ -229,6 +190,16 @@ bucle_recepcion(Servidores, Yo, PaxosData) ->
 		{Pid, get_hecho} ->
 			NuInstancia = datos_paxos:get_hecho(PaxosData),
 			Pid ! {hecho, NuInstancia},
+			bucle_recepcion(Servidores, Yo, PaxosData);
+
+		% Actualizar el valor de max
+		{_Pid, set_max, Max} ->
+			NewPaxosData = datos_paxos:set_max(PaxosData, Max),
+			bucle_recepcion(Servidores, Yo, NewPaxosData);
+
+		{Pid, get_max} ->
+			Max = datos_paxos:get_max(PaxosData),
+			Pid ! {max, Max},
 			bucle_recepcion(Servidores, Yo, PaxosData);
 
 		% Mensajes para proponente y aceptador del servidor local
@@ -265,31 +236,36 @@ check_aceptador_alive(NodoPaxos, NuInstancia) ->
 % implementar tratamiento de mensajes recibidos en Paxos
 % Tanto por proponentes como aceptadores
 gestion_mnsj_prop_y_acep(Mensaje, _Servidores, Yo, _PaxosData) ->
-	%%%%% VUESTRO CODIGO AQUI
-
 	case Mensaje of
 		% Llega prepara a aceptador
 		{_Pid, NuInstancia, prepara, _N} ->
+			{paxos, Yo} ! {self(), set_max, NuInstancia},
 			Pid = check_aceptador_alive(Yo, NuInstancia),
 			Pid ! Mensaje;
 		% Llega prepara_ok a proponente
 		{_Pid, NuInstancia, prepara_ok, _N, _N_a, _V_a} ->
+			{paxos, Yo} ! {self(), set_max, NuInstancia},
 			{list_to_atom("proponente" ++ integer_to_list(NuInstancia)), Yo} ! Mensaje;
 		% Llega prepara_reject a proponente
 		{_Pid, NuInstancia, prepara_reject, _N} ->
+			{paxos, Yo} ! {self(), set_max, NuInstancia},
 			{list_to_atom("proponente" ++ integer_to_list(NuInstancia)), Yo} ! Mensaje;
 		% Llega acepta a aceptador
 		{_Pid, NuInstancia, acepta, _N, _V} ->
+			{paxos, Yo} ! {self(), set_max, NuInstancia},
 			Pid = check_aceptador_alive(Yo, NuInstancia),
 			Pid ! Mensaje;
 		% Llega acepta_ok a proponente
 		{_Pid, NuInstancia, acepta_ok, _N} ->
+			{paxos, Yo} ! {self(), set_max, NuInstancia},
 			{list_to_atom("proponente" ++ integer_to_list(NuInstancia)), Yo} ! Mensaje;
 		% Llega acepta_reject a proponente
 		{_Pid, NuInstancia, acepta_reject, _N} ->
+			{paxos, Yo} ! {self(), set_max, NuInstancia},
 			{list_to_atom("proponente" ++ integer_to_list(NuInstancia)), Yo} ! Mensaje;
 		% Llega decidido a aceptador
 		{_Pid, NuInstancia, decidido, _V} ->
+			{paxos, Yo} ! {self(), set_max, NuInstancia},
 			Pid = check_aceptador_alive(Yo, NuInstancia),
 			Pid ! Mensaje;
 		_ ->
@@ -301,10 +277,10 @@ gestion_mnsj_prop_y_acep(Mensaje, _Servidores, Yo, _PaxosData) ->
 
 %%-----------------------------------------------------------------------------
 espero_escucha(Servidores, Yo, PaxosData) ->
-	io:format("~p : Esperando a recibir escucha~n",[node()]),
+	%io:format("~p : Esperando a recibir escucha~n",[node()]),
 	receive
 		escucha ->
-			io:format("~p : Salgo de la sordera !!~n",[node()]),
+			%io:format("~p : Salgo de la sordera !!~n",[node()]),
 			bucle_recepcion(Servidores, Yo, PaxosData);
 		_Resto -> espero_escucha(Servidores, Yo, PaxosData)
 	end.
@@ -340,7 +316,7 @@ estado(NodoPaxos, NuInstancia) ->
 				PaxosData == timeout ->
 					{false, null};
 				true ->
-					datos_paxos:get_instancia(PaxosData, NuInstancia)
+					datos_paxos:get_registro(PaxosData, NuInstancia)
 			end
 	end.
 
@@ -364,14 +340,7 @@ hecho(NodoPaxos, NuInstancia) ->
 -spec max( node() ) -> non_neg_integer().
 max(NodoPaxos) ->
 	PaxosData = get_paxos_data(NodoPaxos),
-	Instancias = datos_paxos:get_instancias(PaxosData),
-	InstanciasKeys = dict:fetch_keys(Instancias),
-	if
-		[] == InstanciasKeys ->
-			0;
-		true ->
-			lists:max(InstanciasKeys)
-	end.
+	datos_paxos:get_max(PaxosData).
 
 %%-----------------------------------------------------------------------------
 % Minima instancia vigente de entre todos los nodos Paxos

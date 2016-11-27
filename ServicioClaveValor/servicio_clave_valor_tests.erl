@@ -15,7 +15,7 @@
 
 -define(HOST, '127.0.0.1').
 
--define(T_ESPERA, 2).
+-define(T_ESPERA, 1500).
 
 
 
@@ -28,11 +28,11 @@ servidores(Lista_Num) ->
 comprobar(NodoCliente, Clave, ValorAComprobar) ->
     ValorEnBD = cliente:lee(NodoCliente, Clave),
     if ValorEnBD /=  ValorAComprobar ->
-          ?debugFmt("Error escribe; ~p esperado y ~p obtenido~n",
-                                                [ValorAComprobar,ValorEnBD]),
-          exit("2 : Terminan tests por diferir valor en almacen y provisto!!!");
+        ?debugFmt("Error escribe; ~p esperado y ~p obtenido~n",
+                    [ValorAComprobar,ValorEnBD]),
+        exit("2 : Terminan tests por diferir valor en almacen y provisto!!!");
         
-       true -> ok
+        true -> ok
 
     end.
 
@@ -66,7 +66,7 @@ operaciones_basicas() ->
     timer:sleep(?T_ESPERA),
     
     ValorPrevio = cliente:escribe_hash(C_global, "a", "x"),
-    
+
     if ValorPrevio =/= "" ->
         exit("1 : Terminan tests por diferir valor en almacen y provisto!!!");
        true -> ok
@@ -74,7 +74,7 @@ operaciones_basicas() ->
     
     cliente:escribe(C_global, "a", "aa"),
     comprobar(C_global, "a", "aa"),
-    
+
     cliente:escribe(lists:nth(1,L_C), "a", "aaa"),
     
     comprobar(lists:nth(2,L_C), "a", "aaa"),
@@ -147,7 +147,7 @@ clientes_15(N_S, S, C_Fijos) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 nuevo_cliente_op_rand(Num_Cliente, N_S, S) ->
-    N =cliente:start( [ lists:nth(random:uniform(N_S), S) ],
+    N =cliente:start( [ lists:nth(rand:uniform(N_S), S) ],
                                         ?HOST,lists:concat([c,Num_Cliente])),
     
     timer:sleep(?T_ESPERA),
@@ -166,6 +166,10 @@ nuevo_cliente_op_rand(Num_Cliente, N_S, S) ->
 
 
 %%%%%%%%%%%%%%%%% GENERADORES DE TEST %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+tests() ->
+    operaciones_basicas(),
+    clientes_concurrentes().
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 
