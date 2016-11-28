@@ -22,7 +22,7 @@
 -export([compare_n/2]).
 -export([get_paxos_data/2, get_paxos_data/1]).
 
--define(TIMEOUT, 300).
+-define(TIMEOUT, 200).
 
 
 -define(PRINT(Texto,Datos), io:format(Texto,Datos)).
@@ -67,7 +67,9 @@ start(Servidores, Nodo) ->
 init(Servidores, Yo) ->
 	register(paxos, self()),
 	PaxosData = datos_paxos:new_paxos_data(Servidores, Yo),
-	bucle_recepcion(Servidores, Yo, PaxosData).
+	SvHechoList = [ {X, 0} || X <- Servidores ],
+	NewPaxosData = datos_paxos:set_hecho_list(PaxosData, SvHechoList),
+	bucle_recepcion(Servidores, Yo, NewPaxosData).
 
 %%-----------------------------------------------------------------------------
 %% peticion de inicio de proceso de acuerdo para una instancia NuInstancia

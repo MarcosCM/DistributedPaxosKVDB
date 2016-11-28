@@ -78,6 +78,7 @@ bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil) ->
         Mensaje_cliente ->
         	MaxInstancia = paxos:max(Yo),
             {NewBaseDatos, NewUpdatedUntil} = simula_fallo_mensj_cliente(Mensaje_cliente, Servidores, Yo, BaseDatos, UpdatedUntil, MaxInstancia + 1),
+            % Actualizar hecho
             bucle_recepcion(Servidores, Yo, NewBaseDatos, NewUpdatedUntil)
     end.
     
@@ -96,7 +97,6 @@ simula_fallo_mensj_cliente(Mensaje, Servidores, Yo, BaseDatos, UpdatedUntil, NuI
 %%-----------------------------------------------------------------------------
 %% implementar tratamiento de mensajes recibidos en  servidor clave valor
 gestion_mnsj_cliente(Mensaje, Yo, BaseDatos, UpdatedUntil, NuInstancia) ->
-	%io:format("mensaje de cliente: ~p~n", [Mensaje]),
     case Mensaje of
         % Leer valor
         {ClPid, lee, {Clave}} ->
@@ -118,7 +118,6 @@ gestion_mnsj_cliente(Mensaje, Yo, BaseDatos, UpdatedUntil, NuInstancia) ->
 process_read_msg(Yo, ClPid, NuInstancia, Clave, BaseDatos, UpdatedUntil) ->
 	V = {lee, Clave},
     {NewBaseDatos, NewUpdatedUntil} = esperar_consenso(Yo, NuInstancia, V, BaseDatos, UpdatedUntil),
-    %io:format("buscando ~p en ~p~n", [Clave, NewBaseDatos]),
     % Devolver resultado
     ReadVal = dict:find(Clave, NewBaseDatos),
     if
@@ -161,11 +160,10 @@ concat_hash(BaseDatos, Clave, NuevoValor) ->
 
 % Pregunta cada X tiempo si hay consenso sobre una instancia, siendo X cada vez mayor si no hay consenso
 esperar_consenso(Yo, NuInstancia, ExpectedOp, BaseDatos, UpdatedUntil) ->
-	{NewBaseDatos, NuInstancia} = actualizar_bd(Yo, BaseDatos, UpdatedUntil + 1, NuInstancia),
 	paxos:start_instancia(Yo, NuInstancia, ExpectedOp),
-    esperar_consenso(Yo, NuInstancia, 1000, ?MAX_ESPERA_CONSENSO * 1000, ExpectedOp, NewBaseDatos).
+    esperar_consenso(Yo, NuInstancia, 1000, ?MAX_ESPERA_CONSENSO * 1000, ExpectedOp, BaseDatos, UpdatedUntil).
 
-esperar_consenso(Yo, NuInstancia, AfterSec, MaxEsperaConsenso, ExpectedOp, BaseDatos) ->
+esperar_consenso(Yo, NuInstancia, AfterSec, MaxEsperaConsenso, ExpectedOp, BaseDatos, UpdatedUntil) ->
     % Pregunta estado
     Valor = paxos:estado(Yo, NuInstancia),
     case Valor of
@@ -178,7 +176,7 @@ esperar_consenso(Yo, NuInstancia, AfterSec, MaxEsperaConsenso, ExpectedOp, BaseD
                     AfterSecAux = AfterSec
             end,
             timer:sleep(AfterSecAux),
-            esperar_consenso(Yo, NuInstancia, AfterSec * 2, MaxEsperaConsenso, ExpectedOp, BaseDatos);
+            esperar_consenso(Yo, NuInstancia, AfterSec * 2, MaxEsperaConsenso, ExpectedOp, BaseDatos, UpdatedUntil);
         % Si ya hay consenso
         _ ->
             {true, ValorInstancia} = Valor,
@@ -186,20 +184,23 @@ esperar_consenso(Yo, NuInstancia, AfterSec, MaxEsperaConsenso, ExpectedOp, BaseD
             if
             	% Si hay consenso sobre la operacion deseada entonces se devuelve
             	ValorInstancia == ExpectedOp ->
-            		actualizar_bd(Yo, BaseDatos, NuInstancia, NuInstancia);
+            		actualizar_bd(Yo, BaseDatos, UpdatedUntil, NuInstancia);
             	% Si hay consenso sobre una operacion que no es la deseada entonces actualiza y lanza nueva instancia
             	true ->
             		{NewBaseDatos, NuInstancia} = actualizar_bd(Yo, BaseDatos, NuInstancia, NuInstancia),
-            		esperar_consenso(Yo, NuInstancia + 1, ExpectedOp, NewBaseDatos, NuInstancia)
+            		esperar_consenso(Yo, NuInstancia + 1, ExpectedOp, NewBaseDatos, UpdatedUntil)
             end
     end.
 
 % Actualiza la base de datos desde la instancia From hasta la instancia To
-actualizar_bd(_Yo, BaseDatos, From, To) when From > To ->
+actualizar_bd(Yo, BaseDatos, From, To) when From > To ->
+    % Actualiza valor de hecho
+    paxos:hecho(Yo, To),
 	{BaseDatos, To};
 
 actualizar_bd(Yo, BaseDatos, From, To) ->
 	{Decidida, Valor} = paxos:estado(Yo, From),
+    %io:format("~p instancia ~p decidida? ~p valor? ~p~n", [Yo, From, Decidida, Valor]),
 	% Comprobamos que la instancia esta decidida
 	if
 		Decidida ->
@@ -210,7 +211,7 @@ actualizar_bd(Yo, BaseDatos, From, To) ->
 	case ValorInstancia of
 		% Si es una operacion de escritura entonces actualizo
 		{escribe, RegClave, RegValor} ->
-			%io:format("Actualizando BD ~p - ~p: ~p~n", [From, To, ValorInstancia]),
+			%io:format("~p Actualizando BD ~p - ~p: ~p~n", [Yo, From, To, ValorInstancia]),
 			NewBaseDatos = dict:store(RegClave, RegValor, BaseDatos),
 			actualizar_bd(Yo, NewBaseDatos, From + 1, To);
 		% Sino sigo con la siguiente operacion

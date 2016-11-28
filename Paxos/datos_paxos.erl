@@ -111,7 +111,7 @@ set_hecho(PaxosData, Servidor, NuInstancia) ->
 		SvHecho == error ->
 			% En dos pasos, dado que para limpiar instancias es primero necesario tener los valores de hecho actualizados
 			PaxosDataHechoUpd = PaxosData#paxos{hecho = dict:store(Servidor, NuInstancia, PaxosData#paxos.hecho)},
-			PaxosDataHechoUpd#paxos{instancias = hecho_clean_instancias(PaxosData)};
+			PaxosDataHechoUpd#paxos{instancias = hecho_clean_instancias(PaxosDataHechoUpd)};
 		% Existe entrada
 		true ->
 			{ok, Val} = SvHecho,
@@ -122,9 +122,12 @@ set_hecho(PaxosData, Servidor, NuInstancia) ->
 				true ->
 					% En dos pasos, dado que para limpiar instancias es primero necesario tener los valores de hecho actualizados
 					PaxosDataHechoUpd = PaxosData#paxos{hecho = dict:store(Servidor, NuInstancia, PaxosData#paxos.hecho)},
-					PaxosDataHechoUpd#paxos{instancias = hecho_clean_instancias(PaxosData)}
+					PaxosDataHechoUpd#paxos{instancias = hecho_clean_instancias(PaxosDataHechoUpd)}
 			end
 	end.
+
+set_hecho_list(PaxosData, SvHechoList) ->
+	PaxosData#paxos{hecho = dict:from_list(SvHechoList)}.
 
 hecho_clean_instancias(PaxosData) ->
 	Min_hecho = get_min_hecho(PaxosData),

@@ -15,7 +15,7 @@
 
 -define(HOST, '127.0.0.1').
 
--define(T_ESPERA, 1500).
+-define(T_ESPERA, 2).
 
 
 
