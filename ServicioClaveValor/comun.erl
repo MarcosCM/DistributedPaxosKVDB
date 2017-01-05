@@ -27,6 +27,19 @@ vaciar_buzon() ->
     after   0 -> ok
     end.
 
+printar_cola() ->
+	printar_cola([]).
+
+printar_cola(L) ->
+	receive
+		M ->
+			io:format("~p~n", [M]),
+			printar_cola(L ++ [M])
+	after
+		0 ->
+			resend_msg_buff(L)
+	end.
+
 %% Reenviar mensajes almacenados en el buffer
 resend_msg_buff([]) ->
 	buff_empty;
@@ -44,6 +57,7 @@ get_msg_aux(MsgType, MsgBuff, TimeOut) ->
 		Msg ->
 			get_msg_aux(MsgType, MsgBuff ++ [Msg], TimeOut)
 	after TimeOut ->
+		resend_msg_buff(MsgBuff),
 		timeout
 	end.
 

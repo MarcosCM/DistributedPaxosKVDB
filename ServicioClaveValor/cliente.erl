@@ -18,22 +18,7 @@
 
 -define(TIMEOUT, 10).
 
--define(TIEMPO_PROCESADO_PAXOS, 5000).
-
--define(PRINT(Texto,Datos), io:format(Texto,Datos)).
-%-define(PRINT(Texto,Datos), ok)).
-
--define(ENVIO(Mensj, Dest),
-        io:format("~p -> ~p -> ~p~n",[node(), Mensj, Dest]), Dest ! Mensj).
-%-define(ENVIO(Mensj, Dest), Dest ! Mensj).
-
--define(ESPERO(Dato), Dato -> io:format("LLega ~p-> ~p~n",[Dato,node()]), ).
-%-define(ESPERO(Dato), Dato -> ).
-
-
-
-%%%%%%%%%%%% FUNCIONES EXPORTABLES
-
+-define(TIEMPO_PROCESADO_PAXOS, 500).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%  Poner en marcha un nodo cliente
@@ -42,10 +27,10 @@
 %%                      (se puede utilizar también para "dialyzer")
 -spec start( [ atom() ], atom(), atom() ) -> node().
 start(Servidores, Host, NombreNodo) ->
-    io:format("Arrancar un nodo cliente  de servicio clave/valor~n",[]),
+    io:format("Arrancar un nodo cliente de servicio clave/valor~n",[]),
     
      % args para comando remoto erl
-    Args = "-connect_all false -setcookie \'palabrasecreta\'" ++ 
+    Args = "-connect_all false -setcookie palabrasecreta" ++ 
                                             " -pa ./Paxos ./ServicioClaveValor",
 
         % arranca cliente clave/valor en nodo remoto
@@ -73,20 +58,22 @@ stop(Nodo) ->
     ok.
 
 % Solicitar al servidor que ejecute una operación
-servidor_request(ClPid, Op, Params, Servidores) ->
-	servidor_request(ClPid, Op, Params, Servidores, ?TIEMPO_PROCESADO_PAXOS).
+servidor_request(ClPid, UUID, Op, Params, Servidores) ->
+	servidor_request(ClPid, UUID, Op, Params, Servidores, ?TIEMPO_PROCESADO_PAXOS).
 
-servidor_request(_ClPid, _Op, _Params, [], _TimeOut) ->
-	timeout;
+servidor_request(ClPid, UUID, _Op, _Params, [], _TimeOut) ->
+	Res = comun:get_msg(UUID),
+	ClPid ! {UUID, {element(1, Res), element(2, Res)}};
 
-servidor_request(ClPid, Op, Params, [H|T], TimeOut) ->
-    {servidor, H} ! {ClPid, Op, Params},
-    Res = comun:get_msg(list_to_atom(lists:concat([Op, "_res"])), TimeOut),
+servidor_request(ClPid, UUID, Op, Params, [H|T], TimeOut) ->
+    {servidor, H} ! {ClPid, UUID, Op, Params},
+    Res = comun:get_msg(UUID, TimeOut),
     if
         Res == timeout ->
-            servidor_request(ClPid, Op, Params, T, TimeOut);
+        	%io:format("~p timeout req ~p~n", [self(), UUID]),
+            servidor_request(ClPid, UUID, Op, Params, T, TimeOut);
         true ->
-            ClPid ! {list_to_atom(lists:concat([Op, "_res"])), {element(1, Res), element(2, Res)}}
+            ClPid ! {UUID, {element(1, Res), element(2, Res)}}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -97,11 +84,15 @@ servidor_request(ClPid, Op, Params, [H|T], TimeOut) ->
 %%                      (se puede utilizar también para "dialyzer")
 -spec lee( node(), string() ) -> string().
 lee(NodoCliente, Clave) ->
+	% Identificador unico para esta operacion
+	UniqueInt = erlang:unique_integer([monotonic]),
+	UUID = erlang:phash2({UniqueInt, node()}),
 	{cliente, NodoCliente} ! {self(), get_servidores},
 	Servidores = comun:get_msg(get_servidores_res),
-    servidor_request(self(), lee, {Clave}, Servidores),
-    Res = comun:get_msg(lee_res),
-    %io:format("ClResponse: ~p~n", [Res]),
+	%io:format("~p request ~p~n", [self(), UUID]),
+    servidor_request(self(), UUID, lee, {Clave}, Servidores),
+    Res = comun:get_msg(UUID),
+    %io:format("~p res ~p~n", [self(), UUID]),
     {_ResClave, ResValor} = Res,
     ResValor.
 
@@ -113,11 +104,15 @@ lee(NodoCliente, Clave) ->
 %%                      (se puede utilizar también para "dialyzer")
 -spec escribe_generico( node(), string(), string(), boolean ) -> string().
 escribe_generico(NodoCliente, Clave, Valor, ConHash) ->
+	% Identificador unico para esta operacion
+	UniqueInt = erlang:unique_integer([monotonic]),
+	UUID = erlang:phash2({UniqueInt, node()}),
 	{cliente, NodoCliente} ! {self(), get_servidores},
 	Servidores = comun:get_msg(get_servidores_res),
-	servidor_request(self(), escribe, {Clave, Valor, ConHash}, Servidores),
-    Res = comun:get_msg(escribe_res),
-    %io:format("ClResponse: ~p~n", [Res]),
+	%io:format("~p request ~p~n", [self(), UUID]),
+	servidor_request(self(), UUID, escribe, {Clave, Valor, ConHash}, Servidores),
+    Res = comun:get_msg(UUID),
+    %io:format("~p res ~p~n", [self(), UUID]),
     {_ResClave, ResValor} = Res,
     ResValor.
     

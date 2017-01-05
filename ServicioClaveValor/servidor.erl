@@ -14,23 +14,8 @@
 
 -export([init/2]).
 
-
--define(TIMEOUT, 3).
--define(MAX_ESPERA_CONSENSO, 30).
-
-
--define(PRINT(Texto,Datos), io:format(Texto,Datos)).
-%-define(PRINT(Texto,Datos), ok)).
-
--define(ENVIO(Mensj, Dest),
-        io:format("~p -> ~p -> ~p~n",[node(), Mensj, Dest]), Dest ! Mensj).
-%-define(ENVIO(Mensj, Dest), Dest ! Mensj).
-
--define(ESPERO(Dato), Dato -> io:format("LLega ~p-> ~p~n",[Dato,node()]), ).
-%-define(ESPERO(Dato), Dato -> ).
-
-%%%%%%%%%%%%%%%%%%%% FUNCIONES EXPORTABLES  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+-define(TIMEOUT, 150).
+-define(MAX_ESPERA_CONSENSO, 1).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Poner en marcha un nodo Paxos
@@ -42,7 +27,7 @@ start(Servidores, Host, NombreNodo) ->
     io:format("Arrancar un nodo servidor C/V~n",[]),
 
     % args para comando remoto erl
-    Args = "-connect_all false -setcookie \'palabrasecreta\'" ++ 
+    Args = "-connect_all false -setcookie palabrasecreta" ++ 
             " -pa ./Paxos ./ServicioClaveValor",
     % arranca servidor en nodo remoto
     {ok, Nodo} = slave:start(Host, NombreNodo, Args),
@@ -57,7 +42,7 @@ init(Servidores, Yo) ->
     register(servidor, self()),
     
     BaseDatos = dict:new(),
-    bucle_recepcion(Servidores, Yo, BaseDatos, 0).
+    bucle_recepcion(Servidores, Yo, BaseDatos, 0, []).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Parar nodo Erlang remoto
@@ -67,46 +52,59 @@ stop(Nodo) ->
     timer:sleep(10),
     comun:vaciar_buzon(),
     ok.
-    
-%%%%%%%%%%%%%%%%%  FUNCIONES LOCALES  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
-    
+
 %%-----------------------------------------------------------------------------
 % UpdatedUntil indica hasta que numero de instancia esta actualizado este servidor
-bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil) ->
+bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil, ListaUUID) ->
     receive
+    	% Comprobacion de si una UUID esta en mi lista de UUIDs
+    	{SvPid, get_uuid, UUID} ->
+    		IsDone = lists:member(UUID, ListaUUID),
+    		SvPid ! {{get_uuid_res, UUID}, IsDone},
+    		if
+    			% Otro servidor va a realizar esa operacion
+    			IsDone == false ->
+    				bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil, ListaUUID ++ [UUID]);
+    			% Esa operacion ya la he hecho yo
+    			true ->
+    				bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil, ListaUUID)
+    		end;
         % Solicitud de lee, escribe o escribe_hash
-        Mensaje_cliente ->
+        {ClPid, UUID, Op, Params} ->
+            %io:format("~p recibe req ~p~n", [node(), UUID]),
         	MaxInstancia = paxos:max(Yo),
-            {NewBaseDatos, NewUpdatedUntil} = simula_fallo_mensj_cliente(Mensaje_cliente, Servidores, Yo, BaseDatos, UpdatedUntil, MaxInstancia + 1),
-            % Actualizar hecho
-            bucle_recepcion(Servidores, Yo, NewBaseDatos, NewUpdatedUntil)
+            {NewBaseDatos, NewUpdatedUntil} = simula_fallo_mensj_cliente({ClPid, UUID, Op, Params}, Servidores, Yo, BaseDatos, UpdatedUntil, MaxInstancia + 1, ListaUUID),
+            %io:format("~p termina req ~p~n", [node(), UUID]),
+            bucle_recepcion(Servidores, Yo, NewBaseDatos, NewUpdatedUntil, ListaUUID ++ [UUID]);
+        _Msg ->
+        	bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil, ListaUUID)
     end.
     
 %%-----------------------------------------------------------------------------
-simula_fallo_mensj_cliente(Mensaje, Servidores, Yo, BaseDatos, UpdatedUntil, NuInstancia) ->
+simula_fallo_mensj_cliente(Mensaje, Servidores, Yo, BaseDatos, UpdatedUntil, NuInstancia, ListaUUID) ->
     Es_fiable = true,  % es_fiable(),
     Aleatorio = rand:uniform(1000),
       %si no fiable, eliminar mensaje con cierta aleatoriedad
     if  ((not Es_fiable) and (Aleatorio < 200)) -> 
-                bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil);
+                bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil, ListaUUID);
                   % Y si lo es tratar el mensaje recibido correctamente
         true ->
-        	gestion_mnsj_cliente(Mensaje, Yo, BaseDatos, UpdatedUntil, NuInstancia)
+        	gestion_mnsj_cliente(Mensaje, Yo, BaseDatos, UpdatedUntil, NuInstancia, ListaUUID, Servidores)
     end.
 
 %%-----------------------------------------------------------------------------
 %% implementar tratamiento de mensajes recibidos en  servidor clave valor
-gestion_mnsj_cliente(Mensaje, Yo, BaseDatos, UpdatedUntil, NuInstancia) ->
+gestion_mnsj_cliente(Mensaje, Yo, BaseDatos, UpdatedUntil, NuInstancia, ListaUUID, Servidores) ->
     case Mensaje of
         % Leer valor
-        {ClPid, lee, {Clave}} ->
-            process_read_msg(Yo, ClPid, NuInstancia, Clave, BaseDatos, UpdatedUntil);
+        {ClPid, UUID, lee, {Clave}} ->
+        	process_read_msg(Yo, ClPid, UUID, NuInstancia, Clave, BaseDatos, UpdatedUntil, ListaUUID, Servidores);
         % Escribir valor
-        {ClPid, escribe, {Clave, Valor, false}} ->
-            process_write_msg(Yo, ClPid, NuInstancia, Clave, Valor, BaseDatos, UpdatedUntil);
+        {ClPid, UUID, escribe, {Clave, Valor, false}} ->
+            process_write_msg(Yo, ClPid, UUID, NuInstancia, Clave, Valor, BaseDatos, UpdatedUntil, ListaUUID, Servidores);
         % Escribir valor hash
-        {ClPid, escribe, {Clave, Valor, true}} ->
-            process_hash_write_msg(Yo, ClPid, NuInstancia, Clave, Valor, BaseDatos, UpdatedUntil);
+        {ClPid, UUID, escribe, {Clave, Valor, true}} ->
+            process_hash_write_msg(Yo, ClPid, UUID, NuInstancia, Clave, Valor, BaseDatos, UpdatedUntil, ListaUUID, Servidores);
         _ ->
             %%%%%%%%%
             % TO DO %
@@ -115,9 +113,9 @@ gestion_mnsj_cliente(Mensaje, Yo, BaseDatos, UpdatedUntil, NuInstancia) ->
     end.
 
 % Procesar peticion de cliente para leer valor
-process_read_msg(Yo, ClPid, NuInstancia, Clave, BaseDatos, UpdatedUntil) ->
+process_read_msg(Yo, ClPid, UUID, NuInstancia, Clave, BaseDatos, UpdatedUntil, ListaUUID, Servidores) ->
 	V = {lee, Clave},
-    {NewBaseDatos, NewUpdatedUntil} = esperar_consenso(Yo, NuInstancia, V, BaseDatos, UpdatedUntil),
+    {NewBaseDatos, NewUpdatedUntil} = esperar_consenso(Yo, NuInstancia, V, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores, true),
     % Devolver resultado
     ReadVal = dict:find(Clave, NewBaseDatos),
     if
@@ -126,26 +124,26 @@ process_read_msg(Yo, ClPid, NuInstancia, Clave, BaseDatos, UpdatedUntil) ->
     	true ->
     		{ok, ResVal} = ReadVal
     end,
-    ExpectedRes = {lee_res, {Clave, ResVal}},
+    ExpectedRes = {UUID, {Clave, ResVal}},
     ClPid ! ExpectedRes,
     {NewBaseDatos, NewUpdatedUntil}.
 
 % Procesar peticion de cliente para escribir valor
-process_write_msg(Yo, ClPid, NuInstancia, Clave, Valor, BaseDatos, UpdatedUntil) ->
+process_write_msg(Yo, ClPid, UUID, NuInstancia, Clave, Valor, BaseDatos, UpdatedUntil, ListaUUID, Servidores) ->
 	V = {escribe, Clave, Valor},
-    {NewBaseDatos, NewUpdatedUntil} = esperar_consenso(Yo, NuInstancia, V, BaseDatos, UpdatedUntil),
+    {NewBaseDatos, NewUpdatedUntil} = esperar_consenso(Yo, NuInstancia, V, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores, true),
     % Devolver resultado
-    ExpectedRes = {escribe_res, {Clave, Valor}},
+    ExpectedRes = {UUID, {Clave, Valor}},
     ClPid ! ExpectedRes,
     {NewBaseDatos, NewUpdatedUntil}.
 
 % Procesar peticion de cliente para escribir valor
-process_hash_write_msg(Yo, ClPid, NuInstancia, Clave, Valor, BaseDatos, UpdatedUntil) ->
+process_hash_write_msg(Yo, ClPid, UUID, NuInstancia, Clave, Valor, BaseDatos, UpdatedUntil, ListaUUID, Servidores) ->
 	{PrevVal, HashedVal} = concat_hash(BaseDatos, Clave, Valor),
     V = {escribe, Clave, HashedVal},
-    {NewBaseDatos, NewUpdatedUntil} = esperar_consenso(Yo, NuInstancia, V, BaseDatos, UpdatedUntil),
+    {NewBaseDatos, NewUpdatedUntil} = esperar_consenso(Yo, NuInstancia, V, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores, true),
     % Devolver resultado
-    ExpectedRes = {escribe_res, {Clave, PrevVal}},
+    ExpectedRes = {UUID, {Clave, PrevVal}},
     ClPid ! ExpectedRes,
     {NewBaseDatos, NewUpdatedUntil}.
 
@@ -158,12 +156,59 @@ concat_hash(BaseDatos, Clave, NuevoValor) ->
             {PrevVal, integer_to_list(comun:hash(lists:concat([PrevVal, NuevoValor])))}
     end.
 
-% Pregunta cada X tiempo si hay consenso sobre una instancia, siendo X cada vez mayor si no hay consenso
-esperar_consenso(Yo, NuInstancia, ExpectedOp, BaseDatos, UpdatedUntil) ->
-	paxos:start_instancia(Yo, NuInstancia, ExpectedOp),
-    esperar_consenso(Yo, NuInstancia, 1000, ?MAX_ESPERA_CONSENSO * 1000, ExpectedOp, BaseDatos, UpdatedUntil).
+% La operacion no se ha realizado en otro servidor pero la voy a realizar yo
+wait_uuid_response(_ListaUUID, _UUID, 0) ->
+	false;
 
-esperar_consenso(Yo, NuInstancia, AfterSec, MaxEsperaConsenso, ExpectedOp, BaseDatos, UpdatedUntil) ->
+% Espera a respuestas de otros servidores para saber si se ha realizado la operacion
+wait_uuid_response(ListaUUID, UUID, N) ->
+	Res = comun:get_msg({get_uuid_res, UUID}, ?TIMEOUT),
+	if
+		% Esperar respuestas de otros servidores
+		(Res == false) or (Res == timeout) ->
+			wait_uuid_response(ListaUUID, UUID, N-1);
+		% Operacion ya esta hecha
+		true ->
+			true
+	end.
+
+check_uuid(ListaUUID, UUID, Servidores) ->
+	IsDone = lists:member(UUID, ListaUUID),
+	if
+		% No lo he hecho yo previamente, comprobar si otro lo ha hecho
+		IsDone == false ->
+			lists:foreach(fun(Sv) ->
+				{servidor, Sv} ! {self(), get_uuid, UUID}
+			end, lists:subtract(Servidores, [node()])),
+			wait_uuid_response(ListaUUID, UUID, length(Servidores) - 1);
+		% Lo he hecho yo previamente
+		true ->
+			true
+	end.
+
+% Pregunta cada X tiempo si hay consenso sobre una instancia, siendo X cada vez mayor si no hay consenso
+esperar_consenso(Yo, NuInstancia, ExpectedOp, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores, CheckUUID) ->
+	if
+		CheckUUID == false ->
+			% Iniciar instancia paxos para llegar a consenso
+			paxos:start_instancia(Yo, NuInstancia, ExpectedOp),
+		    esperar_consenso(Yo, NuInstancia, 100, ?MAX_ESPERA_CONSENSO * 1000, ExpectedOp, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores);
+		true ->
+			% Comprobar que la operacion no se haya hecho con anterioridad en otro servidor
+			IsDone = check_uuid(ListaUUID, UUID, Servidores),
+			if
+				% No se ha realizado la operacion con anterioridad
+				IsDone == false ->
+					% Iniciar instancia paxos para llegar a consenso
+					paxos:start_instancia(Yo, NuInstancia, ExpectedOp),
+				    esperar_consenso(Yo, NuInstancia, 100, ?MAX_ESPERA_CONSENSO * 1000, ExpectedOp, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores);
+				% La operacion ya se ha realizado en otro servidor
+				true ->
+					actualizar_bd(Yo, BaseDatos, UpdatedUntil, NuInstancia)
+			end
+	end.
+
+esperar_consenso(Yo, NuInstancia, AfterSec, MaxEsperaConsenso, ExpectedOp, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores) ->
     % Pregunta estado
     Valor = paxos:estado(Yo, NuInstancia),
     case Valor of
@@ -176,7 +221,7 @@ esperar_consenso(Yo, NuInstancia, AfterSec, MaxEsperaConsenso, ExpectedOp, BaseD
                     AfterSecAux = AfterSec
             end,
             timer:sleep(AfterSecAux),
-            esperar_consenso(Yo, NuInstancia, AfterSec * 2, MaxEsperaConsenso, ExpectedOp, BaseDatos, UpdatedUntil);
+            esperar_consenso(Yo, NuInstancia, AfterSec * 2, MaxEsperaConsenso, ExpectedOp, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores);
         % Si ya hay consenso
         _ ->
             {true, ValorInstancia} = Valor,
@@ -188,7 +233,8 @@ esperar_consenso(Yo, NuInstancia, AfterSec, MaxEsperaConsenso, ExpectedOp, BaseD
             	% Si hay consenso sobre una operacion que no es la deseada entonces actualiza y lanza nueva instancia
             	true ->
             		{NewBaseDatos, NuInstancia} = actualizar_bd(Yo, BaseDatos, NuInstancia, NuInstancia),
-            		esperar_consenso(Yo, NuInstancia + 1, ExpectedOp, NewBaseDatos, UpdatedUntil)
+            		% Esta vez no compruebo si la UUID la ha hecho otro servidor porque la voy a hacer yo
+            		esperar_consenso(Yo, NuInstancia + 1, ExpectedOp, NewBaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores, false)
             end
     end.
 

@@ -15,7 +15,7 @@
 
 -define(HOST, '127.0.0.1').
 
--define(T_ESPERA, 2).
+-define(T_ESPERA, 100).
 
 
 
@@ -106,7 +106,7 @@ clientes_concurrentes() ->
     % Realizar X iteraciones, de 15 clientes concurrentes cada una
     lists:foreach(fun(_X) -> clientes_15(N_S, S, C_Fijos) end,
                   lists:seq(1,20)),
-    
+
     % parar VMs Erlang
     lists:foreach(fun(X) -> servidor:stop(X) end, S ),
     lists:foreach(fun(X) -> cliente:stop(X) end, C_Fijos),
@@ -161,8 +161,8 @@ nuevo_cliente_op_rand(Num_Cliente, N_S, S) ->
             cliente:lee(N, "b")
     end,
                     
-    cliente:stop(N).
-    %timer:sleep(?T_ESPERA).
+    cliente:stop(N),
+    timer:sleep(?T_ESPERA).
 
 
 %%%%%%%%%%%%%%%%% GENERADORES DE TEST %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -176,5 +176,5 @@ tests() ->
 pruebas_test_() ->
     {inorder,
             [{spawn, {timeout, 6, ?_test(operaciones_basicas())}},
-             {spawn, {timeout, 25, ?_test(clientes_concurrentes())}}
+             {spawn, {timeout, 90, ?_test(clientes_concurrentes())}}
             ]}.
