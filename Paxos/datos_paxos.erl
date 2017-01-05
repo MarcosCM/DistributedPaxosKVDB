@@ -35,7 +35,7 @@ new_paxos_data(Servidores, Yo) ->
 
 % registros
 set_registro(PaxosData, NuRegistro, Valor) ->
-	%io:format("Registro ~p = Valor ~p~n", [NuRegistro, Valor]),
+	%%io:format("Registro ~p = Valor ~p~n", [NuRegistro, Valor]),
 	PaxosData#paxos{registros = dict:store(NuRegistro, Valor, PaxosData#paxos.registros)}.
 
 get_registros(PaxosData) ->
@@ -157,7 +157,7 @@ get_min_hecho_aux([], Min_hecho) ->
 	end;
 
 get_min_hecho_aux([{_Key, Value}|T], Min_hecho) ->
-	%io:format("~p tiene hecho ~p~n", [Key, Value]),
+	%%io:format("~p tiene hecho ~p~n", [Key, Value]),
 	if
 		Min_hecho == none ->
 			get_min_hecho_aux(T, Value);

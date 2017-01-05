@@ -39,9 +39,6 @@ aceptador_wait_msg(NodoPaxos, NuInstancia, N_p, N_a, V_a) ->
 			{paxos, list_to_atom(lists:concat(["", NodoPaxos]))} ! {Pid, set_instancia, NuInstancia, Valor};
 		true ->
 			%io:format("Aceptador ~p err~n", [NodoPaxos]),
-			%%%%%%%%%
-			% TO DO %
-			%%%%%%%%%
 			err
 	end.
 

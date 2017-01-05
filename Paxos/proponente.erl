@@ -58,15 +58,9 @@ proponente_fase_aceptas(NodoPaxos, Servidores, NuInstancia, NeededVotes, N, Chos
 	if
 		% No se ha llegado a consenso
 		Decidido == false ->
-			%%%%%%%%%
-			% TO DO %
-			%%%%%%%%%
 			not_decidido;
 		% Mayoria de aceptadores han llegado a consenso
 		true ->
-			%%%%%%%%%
-			% TO DO %
-			%%%%%%%%%
 			decidido
 	end.
 
@@ -89,9 +83,6 @@ proponente_wait_prepara(NodoPaxos, NuInstancia, NeededVotes, N, V, HighestN, Hig
 			end;
 		true ->
 			%io:format("proponente_wait_prepara(): err~n", []),
-			%%%%%%%%%
-			% TO DO %
-			%%%%%%%%%
 			err
 	end;
 
@@ -121,10 +112,6 @@ proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes, N, V) when NeededVot
 			%io:format("Proponente ~p recibe acepta_ok instancia: ~p~n", [NodoPaxos, NuInstancia]),
 			proponente_wait_acepta(NodoPaxos, NuInstancia, NeededVotes - 1, N, V);
 		true ->
-			%io:format("proponente_wait_acepta(): err~n", []),
-			%%%%%%%%%
-			% TO DO %
-			%%%%%%%%%
 			err
 	end;
 

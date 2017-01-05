@@ -25,17 +25,6 @@
 -define(TIMEOUT, 200).
 
 
--define(PRINT(Texto,Datos), io:format(Texto,Datos)).
-%-define(PRINT(Texto,Datos), ok)).
-
--define(ENVIO(Mensj, Dest),
-		io:format("~p -> ~p -> ~p~n",[node(), Mensj, Dest]), Dest ! Mensj).
-%-define(ENVIO(Mensj, Dest), Dest ! Mensj).
-
--define(ESPERO(Dato), Dato -> io:format("LLega ~p-> ~p~n",[Dato,node()]), ).
-%-define(ESPERO(Dato), Dato -> ).
-
-
 %% El que invoca a las funciones exportables es el nodo erlang maestro
 %%  que es creado en otro programa...para arrancar los nodos replica (con paxos)
 
@@ -284,7 +273,8 @@ espero_escucha(Servidores, Yo, PaxosData) ->
 		escucha ->
 			%io:format("~p : Salgo de la sordera !!~n",[node()]),
 			bucle_recepcion(Servidores, Yo, PaxosData);
-		_Resto -> espero_escucha(Servidores, Yo, PaxosData)
+		_Resto ->
+			espero_escucha(Servidores, Yo, PaxosData)
 	end.
 
 %% Obtiene la estructura de paxos nueva con fiabilidad = no_fiable

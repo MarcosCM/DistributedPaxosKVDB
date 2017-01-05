@@ -24,4 +24,5 @@ killall() ->
     erlang:disconnect_node('s4@127.0.0.1'),
     erlang:disconnect_node('s5@127.0.0.1'),
     erlang:disconnect_node('s6@127.0.0.1'),
+    erlang:disconnect_node('c_glob@127.0.0.1'),
     nodes_reset.
