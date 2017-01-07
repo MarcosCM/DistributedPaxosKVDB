@@ -14,7 +14,14 @@
 %% Iniciar proponente
 %% N = integer()
 proponente_start(NodoPaxos, NuInstancia, N, Valor) ->
-	register(list_to_atom("proponente" ++ integer_to_list(NuInstancia)), self()),
+	RegName = list_to_atom("proponente" ++ integer_to_list(NuInstancia)),
+	CheckProp = whereis(RegName),
+	if
+		undefined == CheckProp ->
+			register(RegName, self());
+		true ->
+			already_registered
+	end,
 	%io:format("Proponente ~p start Instancia ~p N ~p Valor ~p~n", [NodoPaxos, NuInstancia, N, Valor]),
 	% Lista de nodos
 	PaxosData = paxos:get_paxos_data(NodoPaxos),
