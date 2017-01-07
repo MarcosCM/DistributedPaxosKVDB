@@ -71,10 +71,8 @@ bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil, ListaUUID) ->
     		end;
         % Solicitud de lee, escribe o escribe_hash
         {ClPid, UUID, Op, Params} ->
-            %io:format("~p recibe req ~p~n", [node(), UUID]),
         	MaxInstancia = paxos:max(Yo),
             {NewBaseDatos, NewUpdatedUntil} = simula_fallo_mensj_cliente({ClPid, UUID, Op, Params}, Servidores, Yo, BaseDatos, UpdatedUntil, MaxInstancia + 1, ListaUUID),
-            %io:format("~p termina req ~p~n", [node(), UUID]),
             bucle_recepcion(Servidores, Yo, NewBaseDatos, NewUpdatedUntil, ListaUUID ++ [UUID]);
         _Msg ->
         	bucle_recepcion(Servidores, Yo, BaseDatos, UpdatedUntil, ListaUUID)
@@ -191,7 +189,7 @@ esperar_consenso(Yo, NuInstancia, ExpectedOp, BaseDatos, UpdatedUntil, UUID, Lis
 	if
 		CheckUUID == false ->
 			% Iniciar instancia paxos para llegar a consenso
-			paxos:start_instancia(Yo, NuInstancia, ExpectedOp),
+			paxos:start_instancia(Yo, NuInstancia, {UUID, ExpectedOp}),
 		    esperar_consenso(Yo, NuInstancia, 100, ?MAX_ESPERA_CONSENSO * 1000, ExpectedOp, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores);
 		true ->
 			% Comprobar que la operacion no se haya hecho con anterioridad en otro servidor
@@ -200,7 +198,7 @@ esperar_consenso(Yo, NuInstancia, ExpectedOp, BaseDatos, UpdatedUntil, UUID, Lis
 				% No se ha realizado la operacion con anterioridad
 				IsDone == false ->
 					% Iniciar instancia paxos para llegar a consenso
-					paxos:start_instancia(Yo, NuInstancia, ExpectedOp),
+					paxos:start_instancia(Yo, NuInstancia, {UUID, ExpectedOp}),
 				    esperar_consenso(Yo, NuInstancia, 100, ?MAX_ESPERA_CONSENSO * 1000, ExpectedOp, BaseDatos, UpdatedUntil, UUID, ListaUUID, Servidores);
 				% La operacion ya se ha realizado en otro servidor
 				true ->
@@ -228,7 +226,7 @@ esperar_consenso(Yo, NuInstancia, AfterSec, MaxEsperaConsenso, ExpectedOp, BaseD
             % Comprobar el valor sobre el cual se ha llegado a un consenso
             if
             	% Si hay consenso sobre la operacion deseada entonces se devuelve
-            	ValorInstancia == ExpectedOp ->
+            	ValorInstancia == {UUID, ExpectedOp} ->
             		actualizar_bd(Yo, BaseDatos, UpdatedUntil, NuInstancia);
             	% Si hay consenso sobre una operacion que no es la deseada entonces actualiza y lanza nueva instancia
             	true ->
@@ -246,7 +244,6 @@ actualizar_bd(Yo, BaseDatos, From, To) when From > To ->
 
 actualizar_bd(Yo, BaseDatos, From, To) ->
 	{Decidida, Valor} = paxos:estado(Yo, From),
-    %io:format("~p instancia ~p decidida? ~p valor? ~p~n", [Yo, From, Decidida, Valor]),
 	% Comprobamos que la instancia esta decidida
 	if
 		Decidida ->
@@ -256,8 +253,7 @@ actualizar_bd(Yo, BaseDatos, From, To) ->
 	end,
 	case ValorInstancia of
 		% Si es una operacion de escritura entonces actualizo
-		{escribe, RegClave, RegValor} ->
-			%io:format("~p Actualizando BD ~p - ~p: ~p~n", [Yo, From, To, ValorInstancia]),
+		{_UUID, {escribe, RegClave, RegValor}} ->
 			NewBaseDatos = dict:store(RegClave, RegValor, BaseDatos),
 			actualizar_bd(Yo, NewBaseDatos, From + 1, To);
 		% Sino sigo con la siguiente operacion

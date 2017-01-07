@@ -70,7 +70,6 @@ servidor_request(ClPid, UUID, Op, Params, [H|T], TimeOut) ->
     Res = comun:get_msg(UUID, TimeOut),
     if
         Res == timeout ->
-        	%io:format("~p timeout req ~p~n", [self(), UUID]),
             servidor_request(ClPid, UUID, Op, Params, T, TimeOut);
         true ->
             ClPid ! {UUID, {element(1, Res), element(2, Res)}}
@@ -89,10 +88,8 @@ lee(NodoCliente, Clave) ->
 	UUID = erlang:phash2({UniqueInt, node()}),
 	{cliente, NodoCliente} ! {self(), get_servidores},
 	Servidores = comun:get_msg(get_servidores_res),
-	%io:format("~p request ~p~n", [self(), UUID]),
     servidor_request(self(), UUID, lee, {Clave}, Servidores),
     Res = comun:get_msg(UUID),
-    %io:format("~p res ~p~n", [self(), UUID]),
     {_ResClave, ResValor} = Res,
     ResValor.
 
@@ -109,10 +106,8 @@ escribe_generico(NodoCliente, Clave, Valor, ConHash) ->
 	UUID = erlang:phash2({UniqueInt, node()}),
 	{cliente, NodoCliente} ! {self(), get_servidores},
 	Servidores = comun:get_msg(get_servidores_res),
-	%io:format("~p request ~p~n", [self(), UUID]),
 	servidor_request(self(), UUID, escribe, {Clave, Valor, ConHash}, Servidores),
     Res = comun:get_msg(UUID),
-    %io:format("~p res ~p~n", [self(), UUID]),
     {_ResClave, ResValor} = Res,
     ResValor.
     
